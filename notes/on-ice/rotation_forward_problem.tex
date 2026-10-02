@@ -1,0 +1,647 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{framed}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue]{hyperref}
+
+\newcommand{\bO}{\bm{\Omega}}
+\newcommand{\bw}{\bm{\omega}}
+\newcommand{\bx}{\mathbf{x}}
+\newcommand{\bu}{\mathbf{u}}
+\newcommand{\bj}{\mathbf{j}}
+\newcommand{\bi}{\mathbf{i}}
+\newcommand{\bk}{\mathbf{k}}
+\newcommand{\bq}{\mathbf{q}}
+\newcommand{\bI}{\mathbf{I}}
+\newcommand{\It}{\tilde{\mathbf{I}}}
+\newcommand{\bG}{\bm{\Gamma}}
+\newcommand{\bn}{\hat{\mathbf{n}}}
+\newcommand{\E}{\mathsf{E}}
+\newcommand{\Id}{\mathsf{1}}
+\newcommand{\R}{\mathsf{R}}
+\newcommand{\Sm}{\mathsf{S}}
+\newcommand{\K}{\mathsf{K}}
+\newcommand{\dSL}{\Delta\mathrm{SL}}
+\newcommand{\oc}{\mathcal{C}}
+\newcommand{\dd}{\,\mathrm{d}}
+\newcommand{\pM}{\partial M}
+
+\definecolor{clarbar}{RGB}{70,110,170}
+\renewenvironment{leftbar}{%
+  \def\FrameCommand{{\color{clarbar}\vrule width 2.5pt}\hspace{8pt}}%
+  \MakeFramed{\advance\hsize-\width\FrameRestore}}%
+  {\endMakeFramed}
+\newenvironment{clar}{\begin{leftbar}\small\noindent\textbf{Clarification.}\ }{\end{leftbar}}
+
+\title{Dynamic rotational feedbacks: solving the forward problem\\[4pt]
+\large Companion note --- two solution strategies, and a demonstration}
+\author{Working notes (prepared with Claude) --- to be checked}
+\date{23 September 2026}
+
+\begin{document}
+\maketitle
+
+\tableofcontents
+
+\section{Purpose and scope}
+
+This is a companion to \texttt{rotation\_alattar\_notation.pdf} (hereafter Note~1), which derived the
+dynamic rotational theory and its reciprocity properties. Here the concern is narrower and purely
+practical: \emph{given a prescribed load history, how do you actually solve the sea-level equation
+with a dynamically rotating Earth?}
+
+The immediate aim is a demonstration --- a toy problem in which the Chandler wobble, the
+re-orientation of the equatorial bulge, and the resulting redistribution of the oceans can be
+computed and animated. That changes what counts as a good method. For an error-budget calculation
+one wants the cheapest scheme that gets a small correction right; for a demonstration one wants a
+scheme that is cheap to re-run with different parameters, and one wants to choose the forcing so
+that the dynamic and static theories visibly disagree.
+
+The note covers:
+\begin{itemize}
+  \item \S\ref{sec:methodA}: the scheme from Note~1, summarised for forward modelling only (Method~A).
+  \item \S\ref{sec:methodB}: an alternative scheme that iterates over the entire time history
+  (Method~B), with the conditions it must satisfy to be correct.
+  \item \S\ref{sec:compare}: what actually differs between them, and which to use here.
+  \item \S\ref{sec:demo}: three demonstration scenarios and what to plot.
+\end{itemize}
+
+\paragraph{Notation.} Method~B uses the notation of the Earth-rotation literature (Munk \&
+MacDonald 1960), Note~1 that of Al-Attar et al.\ (2024). The correspondence is:
+
+\begin{center}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+Quantity & Note~1 / Method~A & Method~B / Munk--MacDonald\\
+\midrule
+Rotation vector & $\bw_\perp$ (rad\,s$^{-1}$) & $\mathbf{m}=\bw_\perp/\Omega$, complex $m_1+im_2$\\
+Excitation & $\bq$, eq.~\eqref{dp1} & $\bm\psi_{\rm geo}=\bq/\Omega$ (usually $\chi$)\\
+Inertia perturbation & $\bj=\bi\bO$ & $c_{13},c_{23}$, with $\bj_\perp=\Omega(c_{13},c_{23})$\\
+Centrifugal potential & $\psi$ & $\psi_{\rm rot}$\\
+Euler frequency & $\sigma_e=\Omega(I_3-I_1)/I_1$, 304.5\,d & $\sigma_e$\\
+Chandler frequency & $\sigma_e\sqrt{\det(\Id-\K)}$, an output & $\tilde\sigma_c=\sigma_c+i\alpha$, an input\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The single most important line of that table is the last one: in Method~A the free wobble frequency
+is an \emph{output} of the model, and in Method~B it is an \emph{input}. Much of
+\S\ref{sec:compare} follows from that.
+
+\section{Method A: march in time}
+\label{sec:methodA}
+
+This section summarises Note~1 \S\S3.5--3.8. Derivations are there; only what is needed to write a
+solver is repeated here.
+
+\subsection{The one equation that changes}
+
+Everything in the static theory is unchanged except the rule that fixes the rotation vector. In a
+spherically symmetric model, with $I_1=I_2$ and the axial component neglected as usual, that rule
+becomes
+\begin{equation}
+  \boxed{\;\dot\bw_\perp=\sigma_e\,\E\,(\bw_\perp-\bq),\qquad
+  \sigma_e=\frac{\Omega(I_3-I_1)}{I_1},\qquad
+  \E=\begin{pmatrix}0&-1\\1&0\end{pmatrix}\;}
+  \tag{DP1}\label{dp1}
+\end{equation}
+in place of the static $\bw_\perp=\bq$. Here $\bq=\beta\bm\phi_{21}-\bk_\perp/(I_3-I_1)$ is exactly
+the quantity the static solver assigns to $\bw_\perp$: $\beta$ is \texttt{inertia\_factor} and
+$\bm\phi_{21}$ the degree-2, order-1 coefficients of the gravitational potential perturbation
+excluding $\psi$. The Euler period is $2\pi/\sigma_e=304.5$\,d.
+
+\paragraph{How to read it.} $\E$ rotates by $90^\circ$, so the departure $\bw_\perp-\bq$ is turned
+through a right angle and fed back into $\dot\bw_\perp$. The rotation vector therefore
+\emph{circles around} $\bq$ instead of sitting on it. For constant $\bq$,
+\begin{equation}
+  \bw_\perp(t)=\bq+\R(\sigma_e t)\,[\bw_\perp(0)-\bq],
+  \tag{DP2}\label{dp2}
+\end{equation}
+with $\R(\alpha)$ the rotation by $\alpha$: a circle of radius $|\bw_\perp(0)-\bq|$ traced at rate
+$\sigma_e$, prograde. The static solution is the centre of that circle.
+
+\subsection{The feedback, and the wobble frequency}
+
+$\bq$ is not external: part of it is generated by $\bw_\perp$ itself, through the deformation raised
+by $\psi$ (tidal Love numbers) and the equilibrium ocean pole tide. By linearity
+\begin{equation}
+  \bq(t)=\bq^{\zeta}(t)+\K\,\bw_\perp(t),\qquad\text{so}\qquad
+  \dot\bw_\perp=\sigma_e\E\big[(\Id-\K)\bw_\perp-\bq^\zeta\big],
+  \tag{DP3--DP4}\label{dp4}
+\end{equation}
+where $\bq^\zeta$ is driven by the direct load and $\K$ is a constant $2\times2$ matrix. Without
+oceans $\K=\kappa\Id$ with
+\begin{equation}
+  \kappa=\frac{k_2^T}{k_s}=0.314,\qquad k_s=\frac{3G(I_3-I_1)}{\Omega^2b^5}=0.951 .
+  \tag{DP5}\label{dp5}
+\end{equation}
+The free motion then circles at
+\begin{equation}
+  \sigma_{\rm CW}=\sigma_e\sqrt{\det(\Id-\K)}\;\xrightarrow[\text{no ocean}]{}\;\sigma_e(1-\kappa),
+  \qquad T_{\rm CW}=\frac{304.5\,\mathrm{d}}{1-0.314}\approx444\,\mathrm{d},
+  \tag{DP6}\label{dp6}
+\end{equation}
+against an observed 433\,d. Adding the oceans lengthens this further, by of order tens of days
+(Dahlen 1976).
+
+\subsection{Time stepping}
+
+Applying the trapezoidal rule to eq.~\eqref{dp1} with $a=\sigma_e\Delta t/2$,
+\begin{equation}
+  \boxed{\;\bw_{n+1}=\R\,\bw_n+\Sm\,(\bq_n+\bq_{n+1}),\qquad
+  \R=\frac{(1-a^2)\Id+2a\E}{1+a^2},\qquad \Sm=\frac{a^2\Id-a\E}{1+a^2}\;}
+  \tag{DP7}\label{dp7}
+\end{equation}
+$\R$ is exactly a rotation by $2\arctan a$, so the free wobble is carried forward with its amplitude
+unchanged and the scheme adds no numerical damping; $\Sm$ is the weight with which the forcing pulls
+$\bw_\perp$ towards the static solution over the step. $\R+2\Sm=\Id$, so a steady state with
+$\bw=\bq$ is preserved exactly. For monthly steps $a\approx0.31$ and the discrete free period is too
+long by 1.5\% (450.6\,d against 444.0\,d). Backward Euler, with $b=\sigma_e\Delta t$, damps the
+wobble but collapses onto the static theory as $\Delta t\to\infty$:
+\begin{equation}
+  \bw_{n+1}=\frac{(\Id+b\E)\,\bw_n+(b^2\Id-b\E)\,\bq_{n+1}}{1+b^2}\;\xrightarrow[b\to\infty]{}\;\bq_{n+1}.
+  \tag{DP8}\label{dp8}
+\end{equation}
+
+\subsection{Scheme A: modify the existing iteration}
+
+The static solver already iterates, at each time, between the load, the fields and $\bw$. Only the
+$\bw$ update changes. Given $\bw_n$, $\bq_n$ and the load $\zeta_{n+1}$:
+
+\begin{center}
+\fbox{\begin{minipage}{0.93\linewidth}
+\begin{enumerate}
+  \item Initialise $\bw^{(0)}=\bw_n$ and $\sigma^{(0)}=\zeta_{n+1}+\rho_w\oc\,\dSL_n$.
+  \item For $k=0,1,\dots$ until converged:
+  \begin{enumerate}
+    \item $\bm\psi_{21}=r\,\bw^{(k)}$, with $r=\sqrt{4\pi/15}\,\Omega b^2$;
+    \item $u_{lm}=h_l\sigma^{(k)}_{lm}$ and $\phi_{lm}=k_l\sigma^{(k)}_{lm}$, adding
+    $h^T_2\bm\psi_{21}$ and $k^T_2\bm\psi_{21}$ at $(l,m)=(2,1)$;
+    \item $\bq^{(k)}=\beta\bm\phi_{21}-\bk_{\perp,n+1}/(I_3-I_1)$;
+    \item \textbf{the only change:} $\bw^{(k+1)}=\R\bw_n+\Sm(\bq_n+\bq^{(k)})$, in place of
+    $\bw^{(k+1)}=\bq^{(k)}$;
+    \item add $\psi$ from $\bw^{(k+1)}$ to $\phi$, form $\dSL$, and update
+    $\sigma^{(k+1)}=\zeta_{n+1}+\rho_w\oc\,\dSL$.
+  \end{enumerate}
+  \item Store $\bw_{n+1}$ and $\bq_{n+1}$ for the next step.
+\end{enumerate}
+\end{minipage}}
+\end{center}
+
+The rotational part of this iteration contracts by at most $\|\Sm\|\,\|\K\|=\kappa a/\sqrt{1+a^2}<\kappa$,
+so it converges at least as fast as the static loop, at every forcing frequency.
+
+\subsection{Scheme B: solve the rotation separately}
+\label{sec:schemeB}
+
+Because the elastic Earth and the equilibrium ocean respond instantaneously, $\bw$ can be eliminated
+exactly:
+\begin{enumerate}
+  \item \emph{Once:} for $\alpha=1,2$, solve the sea-level equation with no direct load and a
+  \emph{prescribed} $\bw_\perp=\mathbf{e}_\alpha$ (impose $\psi$, let the ocean respond, do not
+  update $\bw$). This gives the response fields $X^\alpha$ and the columns of $\K$.
+  \item \emph{For each time:} solve the sea-level equation for $\zeta(t)$ with
+  $\bw_\perp\equiv\mathbf{0}$, i.e.\ rotational feedback switched off. This gives $X^\zeta(t)$ and
+  $\bq^\zeta(t)$.
+  \item \emph{Then:} integrate eq.~\eqref{dp4} on its own, exactly or with eq.~\eqref{dp7}, whose
+  implicit step is the $2\times2$ solve
+  $(\Id-\Sm\K)\bw_{n+1}=\R\bw_n+\Sm(\bq_n+\bq^\zeta_{n+1})$ with $\bq_n=\bq^\zeta_n+\K\bw_n$ known.
+  \item \emph{Finally:} reassemble $X(t)=X^\zeta(t)+\sum_\alpha\omega_\alpha(t)X^\alpha$.
+\end{enumerate}
+The total cost is $N_t$ sea-level solves \emph{with rotation switched off}, which are independent of
+one another, plus two extra solves. Everything rotational is then a two-dimensional linear ODE.
+
+\subsection{Initial conditions}
+
+From rest, $\bw_0=\mathbf{0}$. From static equilibrium under a pre-existing load, set $\bw_0$ to the
+static solution. A free wobble present at the start is not determined by the loads and must be
+prescribed.
+
+\subsection{Refinement: retaining the neglected terms}
+\label{sec:jdot}
+
+Note~1 drops the $\dot\bj$ terms of the Liouville equation by an ordering argument. They can instead
+be kept exactly, at no real cost, because for an elastic Earth with an equilibrium ocean the inertia
+perturbation is an \emph{instantaneous} linear functional of the current load and the current
+rotation:
+\begin{equation}
+  \bj_\perp=A\,\mathbf{s}+B\,\bw_\perp,\qquad
+  A=(I_3-I_1)\beta k_2,\qquad B=(I_3-I_1)\kappa ,
+  \tag{DP9}\label{dp9}
+\end{equation}
+with $\mathbf{s}$ the degree-2, order-1 coefficients of the load. Then
+$\dot\bj_\perp=A\dot{\mathbf{s}}+B\dot\bw_\perp$, and the full equatorial equation becomes
+\begin{equation}
+  (I_3-I_1-B)\,\bw_\perp+\frac{I_1+B}{\Omega}\,\E\dot\bw_\perp=A\Big(\mathbf{s}-\frac{1}{\Omega}\E\dot{\mathbf{s}}\Big).
+  \tag{DP10}\label{dp10}
+\end{equation}
+This is the same oscillator as eq.~\eqref{dp1} with three changes: the restoring term is softened to
+$I_3-I_1-B$, as before; the effective inertia is stiffened to $I_1+B$, because the deformation adds
+to the wobble's inertia; and the forcing acquires $-\E\dot{\mathbf{s}}/\Omega$, which is the
+classical $\dot c/\Omega$ term of the excitation function (Munk \& MacDonald 1960). The free
+frequency is $\sigma_{\rm CW}=\Omega(I_3-I_1-B)/(I_1+B)$.
+
+\paragraph{Integrate the angular momentum, not the rotation.} Eq.~\eqref{dp10} needs
+$\dot{\mathbf{s}}$, which is awkward. Stepping the equatorial angular momentum perturbation instead
+removes it entirely. With $\mathbf{l}=I_1\bw_\perp+\bj_\perp=(I_1+B)\bw_\perp+A\mathbf{s}$, the
+torque-free statement $\dot{\mathbf{l}}=\Omega\E[(I_3-I_1)\bw_\perp-\bj_\perp]$ becomes
+\begin{equation}
+  \boxed{\;\dot{\mathbf{l}}=\E\Big[\sigma_{\rm CW}\,\mathbf{l}-\frac{\Omega I_3A}{I_1+B}\,\mathbf{s}\Big],
+  \qquad \bw_\perp=\frac{\mathbf{l}-A\mathbf{s}}{I_1+B}\;}
+  \tag{DP11}\label{dp11}
+\end{equation}
+a constant-coefficient linear ODE driven by $\mathbf{s}$ alone, with $\bw_\perp$ recovered
+algebraically. The integrated quantity is the conserved one, so the scheme cannot drift in angular
+momentum.
+
+\paragraph{What it is worth.} $B/I_1=\delta\kappa\approx1.0\times10^{-3}$, so the effective-inertia
+correction lengthens the Chandler period by about half a day --- negligible beside the core and
+anelasticity uncertainties. The $\dot{\mathbf{s}}$ term is of relative size $\nu/\Omega$, which is
+neatly (1 day)/(forcing period): about 3\% at monthly periods and 0.3\% at annual. The one place it
+matters qualitatively is a step load: angular momentum is conserved across an instantaneous mass
+redistribution, so $\bw_\perp$ must jump immediately to $-A\mathbf{s}/(I_1+B)$ --- the rotation axis
+holding its place in space while the figure axis moves under it --- and only then begin to circle.
+That jump is about 0.2\% of the eventual static response and of opposite sign, and eq.~\eqref{dp1}
+misses it entirely.
+
+\begin{clar}
+$A$ and $B$ are pure Love-number expressions only for the solid Earth. If $\mathbf{s}$ is the
+\emph{total} load, $B$ is the solid-Earth $\kappa$ but $\mathbf{s}$ still depends on $\bw_\perp$
+through the pole tide, so the sea-level iteration remains. If $\mathbf{s}$ is the \emph{direct} load,
+$B$ must be the full $\K$ and $A$ must account for the ocean response raised by the direct load;
+neither is then a Love-number expression, and both come from the solves of \S\ref{sec:schemeB}. In
+that case $B$ is a non-isotropic matrix that does not commute with $\E$, so $\sigma_{\rm CW}$ returns
+to the $\sqrt{\det}$ form and the stiffening is anisotropic.
+
+The construction relies on the inertia having no memory. For a viscoelastic Earth $\bj$ is a
+convolution over the load history, $\dot\bj$ brings that history with it, and internal variables (or
+a Laplace-domain treatment) are needed instead.
+\end{clar}
+
+\paragraph{Does it break reciprocity?} No. The criterion, derived in Note~1 \S3.3, is that every
+matrix multiplying $\dd/\dd t$ must be a multiple of $\E$, since $\E\,\dd/\dd t$ is symmetric and its
+contribution to the forward--adjoint pairing therefore integrates to a boundary term. The $B$ term
+satisfies this, simply renormalising $\bG$; the ocean term does so only if the ocean's rotational
+response matrix is isotropic, and the violation otherwise is of relative size $\approx2\times10^{-4}$
+--- far below the terms being retained here. For an inversion the practical point is unaffected
+either way: the adjoint to implement is the transpose of the discrete forward operator, which is
+exact regardless of how the continuum statement comes out.
+
+\section{Method B: iterate over the whole time history}
+\label{sec:methodB}
+
+Method~A exploits causality: the discretised problem can be marched, so the history is built one step
+at a time. The alternative is to treat the entire space--time history as a single unknown and iterate
+on it, exactly as the standard pseudo-spectral solver iterates on a single spatial map. This is the
+natural approach if the sea-level problem is nonlinear, and it is worth setting out properly rather
+than only as a foil for Method~A.
+
+\begin{clar}
+The scheme below follows one drafted by Gemini in response to a question from DH. It is restated
+here as a method in its own right, with the consistency requirements of \S\ref{sec:consistency}
+built into the steps rather than appended as corrections.
+\end{clar}
+
+Because the Liouville equation is a differential equation in time, the iteration runs over entire
+time histories rather than over spatial grids alone.
+
+\subsection{Assumptions}
+
+\begin{enumerate}
+  \item \textbf{Elastic Earth.} The deformation $u$ and gravitational perturbation $\phi$ respond
+  instantly to the load; long-term viscoelastic mantle flow is ignored.
+  \item \textbf{Hydrostatic oceans.} The Chandler period (about 14 months) is long enough that the
+  ocean surface is taken to conform instantly to the prevailing equipotential.
+  \item \textbf{No relative angular momentum.} Ice and meltwater act purely as a mass load; they are
+  not moving fast enough to contribute a relative angular momentum term ($h_i=0$, equivalently
+  $\bk=\mathbf{0}$ in the generalised problem).
+  \item \textbf{Damped kinematics.} The wobble is propagated with a damped, complex Chandler
+  frequency $\tilde\sigma_c=\sigma_c+i\alpha$ (Munk \& MacDonald 1960), representing anelasticity and
+  core coupling.
+\end{enumerate}
+
+Assumptions 1--3 are exactly those of Note~1. Assumption~4 adds physics that Note~1 leaves out; it is
+a modelling choice rather than a numerical requirement (\S\ref{sec:compare_damping}).
+
+\subsection{The iterative loop}
+
+The unknowns are spatio-temporal fields such as $\dSL(\theta,\lambda,t)$, evaluated on a discretised
+time vector $t=[t_0,\dots,t_N]$.
+
+\paragraph{Step 1: initialise.} Guess the sea-level change over the whole history. The simplest
+choice is a rigid-Earth ``eustatic'' model in which meltwater spreads uniformly over the oceans at
+each time: $\dSL^{(0)}(\theta,\lambda,t)$.
+
+\paragraph{Step 2: build the total load.} At iteration $k$, at every time,
+\begin{equation}
+  \sigma^{(k)}(t)=\rho_i(1-\oc)\,\Delta I(t)+\rho_w\,\oc\,\dSL^{(k)}(t),
+  \tag{B1}\label{b1}
+\end{equation}
+with $\Delta I(t)$ the prescribed ice history, $\oc$ the ocean function, and the factor $1-\oc$
+accounting for floating ice (Note~1, eqs.~2.11--2.12).
+
+\paragraph{Step 3: form the excitation.} At each time, take the degree-2, order-1 coefficients of the
+\emph{total} perturbed gravitational potential --- which contains the solid Earth's deformation as
+well as the direct mass --- and convert them to the inertia perturbation through MacCullagh's
+formula, Note~1 eq.~(P2). In the notation of \S\ref{sec:methodA} this is $\bq$, and the excitation
+functions are
+\begin{equation}
+  \bm\psi^{(k)}_{\rm geo}(t)=\psi^{(k)}_1(t)+i\,\psi^{(k)}_2(t)=\frac{\bq^{(k)}(t)}{\Omega},
+  \qquad
+  \psi^{(k)}_3(t)=-\frac{c^{(k)}_{33}(t)}{C}.
+  \tag{B2}\label{b2}
+\end{equation}
+
+\begin{clar}
+The deformation contribution must not be omitted. Integrating the surface load alone gives only the
+direct mass term; the solid Earth's own redistribution supplies the rest, conventionally as a factor
+$(1+k_2')$ with $k_2'\approx-0.30$, i.e.\ a 30\% reduction. Reading the inertia off the total
+potential coefficient, as above, includes it automatically and is the safer construction.
+
+The axial relation $\psi_3=-c_{33}/C$ is algebraic rather than an ODE, and correctly so: the axial
+Liouville equation integrates exactly, so length of day carries no memory at this order (Note~1,
+eq.~D3.5).
+\end{clar}
+
+\paragraph{Step 4: propagate the wobble.} With $\bm\psi^{(k)}_{\rm geo}(t)$ known, integrate
+\begin{equation}
+  \frac{i}{\tilde\sigma_c}\,\dot{\mathbf{m}}^{(k)}(t)+\mathbf{m}^{(k)}(t)=\bm\psi^{(k)}_{\rm geo}(t),
+  \tag{B3}\label{b3}
+\end{equation}
+for the rotation history $\mathbf{m}^{(k)}(t)=\bw^{(k)}_\perp(t)/\Omega$, with an initial condition at
+$t_0$ --- typically $\mathbf{m}(0)=0$ for a relaxed state before the melt event. Which feedbacks
+$\tilde\sigma_c$ may contain is fixed by \S\ref{sec:consistency}.
+
+\begin{clar}
+Eq.~\eqref{b3} is eq.~\eqref{dp1} written complexly, with $\E$ replaced by multiplication by $i$:
+rearranging gives $\dot{\mathbf{m}}=i\tilde\sigma_c(\mathbf{m}-\bm\psi_{\rm geo})$. The one
+substantive difference is the coefficient: using a Chandler rather than a Euler frequency means part
+of the rotational feedback has been folded into the propagator instead of being generated by the
+iteration.
+\end{clar}
+
+\paragraph{Step 5: centrifugal potential.} From $\mathbf{m}^{(k)}(t)$, and $m_3(t)$ if the axial term
+is retained, form $\psi^{(k)}_{\rm rot}(\theta,\lambda,t)$ at every time.
+
+\paragraph{Step 6: deformation and gravity.} Map the load to the response with loading Love numbers
+$h_n,k_n$, \emph{and} the centrifugal perturbation to its response with the tidal Love numbers
+$h^T_2,k^T_2$:
+\begin{equation}
+  u_{lm}=h_l\sigma^{(k)}_{lm}+h^T_2\,\psi^{(k)}_{{\rm rot},lm}\big|_{l=2},\qquad
+  \phi_{lm}=k_l\sigma^{(k)}_{lm}+k^T_2\,\psi^{(k)}_{{\rm rot},lm}\big|_{l=2}.
+  \tag{B5}\label{b5}
+\end{equation}
+
+\begin{clar}
+Both terms are needed. Folding the feedback into $\tilde\sigma_c$ accounts for the centrifugal
+perturbation's effect on the wobble \emph{dynamics}, but the deformation \emph{fields} $u$ and
+$\phi$ still require it explicitly. Without the tidal terms the pole-tide deformation of the solid
+Earth --- a good part of what a demonstration is meant to show --- is absent from the computed sea
+level.
+\end{clar}
+
+\paragraph{Step 7: update sea level.} Force the oceans onto the new combined equipotential:
+\begin{equation}
+  \dSL^{(k+1)}(\theta,\lambda,t)=\frac1g\left(\phi^{(k)}-g\,u^{(k)}+\psi^{(k)}_{\rm rot}\right)+\frac{\Phi_g(t)}{g},
+  \tag{B4}\label{b4}
+\end{equation}
+with $\Phi_g(t)$ fixed at each time by mass conservation between ocean and ice.
+
+\begin{clar}
+Eq.~\eqref{b4} uses the opposite sign convention for $\phi$ and $\psi$ from Al-Attar et al., who
+write $\dSL=-(gu+\phi+\psi)/g+\Phi_g/g$ with $\phi$ the Newtonian potential perturbation, so that the
+geoid is $-\phi/g$. Eq.~\eqref{b4} takes the geoid as $+\phi/g$ and flips $\psi$ to match. Each is
+self-consistent; mixing them is fatal, so settle on one before implementing anything from both
+documents.
+\end{clar}
+
+\paragraph{Step 8: iterate.} Compare $\dSL^{(k+1)}$ with $\dSL^{(k)}$ over all grid points and all
+times; if the difference exceeds tolerance, return to Step~2.
+
+Convergence is a global condition because the coupling runs both ways in time: the wobble at
+$t_{100}$ depends on the sea level at $t_{50}$ through the excitation history, and updating the sea
+level in Step~7 changes the whole wobble history, hence the whole centrifugal history.
+
+\subsection{Consistency requirements}
+\label{sec:consistency}
+
+Three conditions must hold for the loop to converge to the right answer. Each is a case where the
+method returns a plausible but wrong result rather than failing outright.
+
+\begin{enumerate}
+  \item \textbf{The inertia must include the deformation} (Step~3). Otherwise the excitation is too
+  large by about 30\%.
+  \item \textbf{The fields must include the tidal response} (Step~6), or the solid Earth's pole-tide
+  deformation is missing from $u$, $\phi$ and hence from sea level.
+  \item \textbf{Each feedback must be counted exactly once} (Step~4). The rotational feedback has two
+  parts: the solid Earth's elastic yielding to the centrifugal perturbation (the factor $1-\kappa$ of
+  eq.~\eqref{dp6}), and the equilibrium ocean pole tide. Either may be folded into $\tilde\sigma_c$ or
+  generated by the outer loop, but not both. The two self-consistent choices are:
+  \begin{itemize}
+    \item $\tilde\sigma_c$ = the \emph{no-ocean} Chandler frequency, with the outer loop generating
+    the ocean pole tide through Step~7. This is the recommended choice.
+    \item $\tilde\sigma_c=\sigma_e$, the Euler frequency, with the outer loop generating both parts.
+    Simplest to state, but with much the worse convergence (\S\ref{sec:gain}).
+  \end{itemize}
+  Using the \emph{observed} 433\,d value is neither: it already contains the ocean pole tide, which
+  Step~7 then adds a second time.
+\end{enumerate}
+
+\section{What actually differs, and which to use}
+\label{sec:compare}
+
+\subsection{The two methods solve the same equations}
+
+This is worth stating plainly before the differences: eq.~\eqref{b3} is eq.~\eqref{dp1}, and
+eq.~\eqref{b4} is the sea-level equation with the centrifugal term. Where both converge, they
+converge to the same answer. The differences below are about cost, robustness, and which quantities
+are inputs rather than outputs, provided the consistency requirements of \S\ref{sec:consistency}
+are met.
+
+\subsection{Global iteration versus causal marching}
+
+Method~B iterates over the whole time history: guess $\dSL(\theta,\lambda,t)$ everywhere, rebuild
+the excitation over all $t$, re-integrate the ODE over all $t$, repeat. Method~A marches, because
+the discretised problem is causal: at step $n+1$ the only things needed from the past are the
+2-vectors $\bw_n$ and $\bq_n$. There is no outer loop over time, and no need to hold the entire
+space--time field in memory.
+
+For a forward run this is the difference between $N_{\rm iter}\times N_t$ sea-level solves, held
+together by a global convergence test, and $N_t$ solves each converging locally --- or, with
+Scheme~B, $N_t$ \emph{independent} solves that can be run in any order or in parallel.
+
+\subsection{Iterating the feedback versus inverting it}
+\label{sec:gain}
+
+Method~B iterates the rotational feedback; Method~A inverts it. In Method~B's outer loop, one lap of
+the cycle (sea level $\to$ load $\to$ excitation $\to$ $\mathbf{m}$ $\to$ $\psi_{\rm rot}$ $\to$ sea
+level) has gain
+\begin{equation}
+  A(\nu)=\frac{\kappa_{\rm fb}}{\left|1-\nu/\sigma_c\right|}
+  \tag{C1}\label{c1}
+\end{equation}
+at forcing frequency $\nu$, where $\kappa_{\rm fb}$ is whatever part of the feedback is not already
+inside $\sigma_c$. The iteration diverges where $A>1$. Two cases:
+\begin{itemize}
+  \item With $\tilde\sigma_c$ the no-ocean Chandler frequency, the solid-Earth part is already folded
+  in and $\kappa_{\rm fb}$ is only the ocean pole tide, of order $0.05$. The loop diverges for forcing
+  within roughly 5\% of the Chandler period, say 425--465\,d, and converges slowly either side.
+  \item With $\tilde\sigma_c=\sigma_e$, the Euler frequency, the loop must generate both parts, so
+  $\kappa_{\rm fb}=\kappa=0.314$ and the divergent band widens to roughly 230--444\,d --- which
+  swallows the annual band. This is the price of the simpler propagator.
+\end{itemize}
+Method~A has no such band. In Scheme~B the $2\times2$ system $(\Id-\Sm\K)\bw_{n+1}=\dots$ is solved
+directly, and in Scheme~A the per-step contraction is $\kappa a/\sqrt{1+a^2}<\kappa$ at every
+frequency, because the step map $\Sm$ carries a factor $a/\sqrt{1+a^2}<1$.
+
+For the demonstration this matters more than it would for a production run, because the scenarios
+worth showing (\S\ref{sec:demo}) are precisely the ones near resonance.
+
+\subsection{Damping}
+\label{sec:compare_damping}
+
+Method~B propagates the wobble with a complex $\tilde\sigma_c$, which is partly motivated by not
+wanting the wobble to ring indefinitely in the solver. Two comments. The ringing is physical, not
+numerical: an undamped elastic Earth
+genuinely rings, and eq.~\eqref{dp7} reproduces that faithfully because $\R$ is an exact rotation.
+And damping is worth including --- the observed $Q_{\rm CW}$ is of order $10^2$ (Smith \& Dahlen 1981) --- but as a physical
+statement about anelasticity and core coupling, not as a device to stabilise an integrator. For the
+demonstration it is better treated as an adjustable knob (\S\ref{sec:demo_impl}).
+
+\subsection{What each method is good for}
+
+Method~A, for this problem:
+\begin{itemize}
+  \item \emph{Cheap animation.} With Scheme~B, once $\K$ and $X^\alpha$ exist, rendering the wobble
+  at any frame rate costs a $2\times2$ ODE and no sea-level solves.
+  \item \emph{Cheap parameter sweeps.} Changing the damping, retuning $\sigma_e$ for core
+  decoupling, or switching rotation off entirely costs nothing further. Every such experiment in
+  Method~B is a complete re-run.
+  \item \emph{$\sigma_{\rm CW}$ is diagnosed, not imposed,} so it can be checked against 433\,d, and
+  double counting cannot hide.
+  \item \emph{No artificial damping needed} for stability.
+\end{itemize}
+
+Method~B, in its favour:
+\begin{itemize}
+  \item \emph{Nonlinearity.} A global Picard loop does not care whether the problem is linear. With
+  moving shorelines, grounded-ice margins or a viscoelastic Earth, Scheme~B's exact superposition
+  fails (Scheme~A largely survives, being a fixed point per step). Method~B's structure generalises
+  unchanged.
+  \item \emph{Contact with the rotation literature.} Excitation functions $\chi$ are how observed and
+  modelled excitation budgets are published, so working in those variables saves a conversion when
+  comparing against them. This is a change of variables ($\mathbf{m}=\bw_\perp/\Omega$,
+  $\bm\chi=\bq/\Omega$), not a property of the scheme, and is equally available to Method~A --- a
+  convenience rather than a reason to choose one method over the other.
+\end{itemize}
+
+\subsection{Recommendation for the demonstration}
+
+Use Method~A in the Scheme~B form. The problem is linear and time-invariant, which is exactly the
+case where the rotational part collapses to two extra solves plus a two-dimensional ODE, and the
+demonstration needs many re-runs with different forcing periods and damping. Keep Method~B's
+structure in reserve if the toy problem later grows a moving shoreline. In either case, meet the
+consistency requirements of \S\ref{sec:consistency} and settle the sign convention of
+eq.~\eqref{b4} first.
+
+\section{Designing the demonstration}
+\label{sec:demo}
+
+For an error budget one asks whether the dynamic correction is above the noise; the answer, for
+multi-year trends, is no. For a demonstration the criterion is the opposite: pick the regimes where
+the dynamic theory does something the static theory \emph{cannot do at all}. There are three.
+
+\subsection{Scenario 1: impulsive melt, then nothing}
+
+Apply a load over a month, then hold everything fixed. The static theory gives a sea-level field
+that then sits still forever. The dynamic theory gives a rotation vector that circles its new
+equilibrium at the Chandler rate indefinitely, so the sea-level field keeps moving for years after
+the forcing has stopped.
+
+This is the strongest demonstration, because the difference is qualitative rather than a
+percentage: ringing after the load stops is pure memory, and there is nowhere for it to come from in
+the static formulation. A step load is also the one case where the refinement of \S\ref{sec:jdot} is
+worth carrying: it supplies the instantaneous jump in $\bw_\perp$ demanded by conservation of angular
+momentum at the moment the mass is added.
+
+\subsection{Scenario 2: periodic forcing swept through resonance}
+
+Melt and refreeze periodically, sweeping the period from about 100\,d to about 2000\,d. Plot the
+amplitude of the rotational part of the sea-level signal against forcing period. The static theory
+is a flat line; the dynamic theory is a resonance curve peaking at $T_{\rm CW}$, with a sign
+reversal either side. From eq.~\eqref{dp4} with $\K=\kappa\Id$, the ratio of the two is
+\begin{equation}
+  \frac{w_{\rm dynamic}}{w_{\rm static}}=\frac{1}{1-\nu/\sigma_{\rm CW}},
+  \tag{C2}\label{c2}
+\end{equation}
+which is $-0.072$ at 30\,d, $-4.64$ at one year (prograde) and $1$ for a trend. This single plot
+conveys the whole content of the extension.
+
+\subsection{Scenario 3: steady trend}
+
+The reassuring limit. The two theories agree on the trend; the dynamic solution differs only by a
+constant offset perpendicular to it, of magnitude (trend rate) $\times\,T_{\rm CW}/2\pi\approx70$\,d,
+plus a free wobble excited at switch-on.
+
+\subsection{What to plot}
+
+The rotational part of the field is exactly degree 2, order 1, so it is a clean four-lobed pattern
+with extrema near $\pm45^\circ$ latitude, and the wobble carries it round in longitude with the
+Chandler period. Three panels side by side work well:
+\begin{itemize}
+  \item \textbf{the pole path}: $\omega_1$ against $\omega_2$, showing the spiral circling the moving
+  static solution $\bq$ --- this is the polar motion itself, and eq.~\eqref{dp2} made visible;
+  \item \textbf{sea level}: the difference between the rotating and non-rotating solutions, i.e.\
+  $\sum_\alpha\omega_\alpha(t)X^\alpha$ from Scheme~B, with the pattern rotating in longitude;
+  \item \textbf{the solid Earth}: vertical displacement, showing the equatorial bulge re-orienting.
+\end{itemize}
+Worth saying in the narration: in an elastic Earth the bulge follows the rotation axis
+\emph{instantaneously}. There is no lag between axis and bulge; the lag is between the axis and the
+forcing. A lagging bulge requires anelasticity, which is also what damps the wobble.
+
+\subsection{Implementation notes}
+\label{sec:demo_impl}
+
+\begin{itemize}
+  \item Use Scheme~B. Two solves give $X^1,X^2$ and $\K$; one solve per time gives the non-rotating
+  background; after that the animation is a $2\times2$ ODE, so frame rate and forcing period are
+  free parameters.
+  \item $l_{\max}=64$ is ample: the rotational signal is degree 2, order 1 exactly, and the
+  background fingerprint does not need to be sharp for this purpose.
+  \item Make damping a slider rather than a fixed choice. Showing the same melt event with
+  $Q=\infty$ and $Q=100$ makes the point that the ringing is physical and its decay is a modelling
+  assumption.
+  \item Diagnose $\sigma_{\rm CW}$ from $\K$ and display it. Running once with the ocean function
+  zeroed and once with real oceans shows the period lengthening by of order tens of days purely
+  because of the water --- a result worth displaying in its own right, and the cleanest way to show that the
+  feedback is counted once (\S\ref{sec:consistency}, item~3).
+\end{itemize}
+
+\subsection{Two cautions for the narration}
+
+\paragraph{``Sloshing'' here means equilibrium redistribution.} In this theory the ocean surface is
+always exactly an equipotential and the water has no inertia of its own. What moves is the
+equipotential; the water follows it instantly. All the memory in the system lives in the rotation
+axis. Genuine sloshing --- waves, adjustment, a non-equilibrium pole tide --- would need a
+shallow-water model on top of this. The animation will look like a dynamic ocean response, and it is
+not one, so this is worth stating explicitly.
+
+\paragraph{Amplitudes.} A realistic melt event produces polar motion of order milliarcseconds and a
+pole tide of order hundredths of a millimetre, which will be invisible next to the direct
+fingerprint. For the demonstration, either exaggerate the load heavily or --- better --- plot the
+rotational component on its own colour scale with the direct part subtracted, which is both more
+honest and shows the pattern more clearly. For scale, the equilibrium pole tide associated with the
+observed Chandler wobble is of order a few millimetres.
+
+\begin{thebibliography}{9}
+\bibitem{aa24} Al-Attar, D., Syvret, F., Crawford, O., Mitrovica, J.X.\ \& Lloyd, A.J., 2024. Reciprocity and sensitivity kernels for sea level fingerprints, \emph{Geophys.\ J.\ Int.}, 236(1), 362--378.
+\bibitem{dahlen76} Dahlen, F.A., 1976. The passive influence of the oceans upon the rotation of the Earth, \emph{Geophys.\ J.\ R.\ astr.\ Soc.}, 46, 363--406.
+\bibitem{munk} Munk, W.H.\ \& MacDonald, G.J.F., 1960. \emph{The Rotation of the Earth}, Cambridge University Press.
+\bibitem{sd81} Smith, M.L.\ \& Dahlen, F.A., 1981. The period and Q of the Chandler wobble, \emph{Geophys.\ J.\ R.\ astr.\ Soc.}, 64, 223--281.
+\end{thebibliography}
+
+\end{document}

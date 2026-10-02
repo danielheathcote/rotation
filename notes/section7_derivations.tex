@@ -1,0 +1,328 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{amsmath,amssymb,bm,mathtools}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue]{hyperref}
+
+\newcommand{\bw}{\bm{\omega}}
+\newcommand{\bq}{\mathbf{q}}
+\newcommand{\bc}{\mathbf{c}}
+\newcommand{\be}{\mathbf{e}}
+\newcommand{\bb}{\mathbf{b}}
+\newcommand{\E}{\mathsf{E}}
+\newcommand{\Id}{\mathsf{1}}
+\newcommand{\K}{\mathsf{K}}
+\newcommand{\M}{\mathsf{M}}
+\newcommand{\se}{\sigma_{\mathrm e}}
+\newcommand{\scw}{\sigma_{\mathrm{CW}}}
+\newcommand{\dd}{\,\mathrm{d}}
+
+\title{Analytic solutions of the wobble equation:\\ derivations for \S7 and the damped form of \S8.1}
+\author{Working notes (prepared with Claude) --- to be checked}
+\date{1 October 2026}
+
+\begin{document}
+\maketitle
+
+\noindent This note derives, step by step, the three results of \S7 (``What the equation does'') of the
+note \texttt{rotation\_dynamic\_elastic.pdf}. Section~5 constructs the damped form $\mathsf{L}=\se\E-\gamma\Id$ of N\S8.1. Equation numbers prefixed by ``N'' refer to that note.
+
+%=======================================================================
+\section{Setting up}
+%=======================================================================
+
+\paragraph{The equation.} The starting point is eq.~N(22), with no damping ($\gamma=0$):
+\begin{equation}
+  \dot\bw=\se\,\E\big[(\Id-\K)\bw-\bq^\zeta(t)\big],
+  \qquad \E=\begin{pmatrix}0&-1\\1&0\end{pmatrix}.
+  \label{eq:start}
+\end{equation}
+Here $\bw$ is the equatorial rotation vector and $\bq^\zeta(t)$ the excitation from the direct load.
+
+\paragraph{Isotropic approximation.} Take $\K=\kappa\Id$. Then $(\Id-\K)\bw-\bq^\zeta=(1-\kappa)\bw-\bq^\zeta$.
+Factoring out $(1-\kappa)$,
+\begin{equation}
+  \dot\bw=\se(1-\kappa)\,\E\Big[\bw-\frac{\bq^\zeta}{1-\kappa}\Big].
+\end{equation}
+Define the Chandler frequency and the static answer:
+\begin{equation}
+  \scw:=\se(1-\kappa),\qquad \bw_s(t):=\frac{\bq^\zeta(t)}{1-\kappa}.
+  \label{eq:defs}
+\end{equation}
+$\bw_s$ is the static answer because setting $\dot\bw=\mathbf{0}$ in eq.~\eqref{eq:start} gives
+$(1-\kappa)\bw=\bq^\zeta$, since $\E$ is invertible. The equation becomes
+\begin{equation}
+  \boxed{\;\dot\bw=\scw\,\E\,(\bw-\bw_s)\;}
+  \label{eq:main}
+\end{equation}
+
+\paragraph{Complex form.} Write $m=\omega_1+i\omega_2$, and similarly $m_s$ for $\bw_s$. For any
+$\mathbf{v}=(v_1,v_2)$, $\E\mathbf{v}=(-v_2,v_1)$, whose complex form is
+$-v_2+iv_1=i(v_1+iv_2)$. So
+\begin{equation}
+  \E\ \longleftrightarrow\ \text{multiplication by } i,\qquad
+  \E^T=-\E\ \longleftrightarrow\ \text{multiplication by } -i,
+  \label{eq:Ei}
+\end{equation}
+and eq.~\eqref{eq:main} is
+\begin{equation}
+  \boxed{\;\dot m=i\scw\,(m-m_s)\;}
+  \label{eq:mainc}
+\end{equation}
+Multiplying by $i$ rotates by $+90^\circ$, i.e.\ from $\be_1$ towards $\be_2$. This is
+anticlockwise viewed from above the north pole, the same sense as the Earth's rotation
+(\emph{prograde}).
+
+\paragraph{The rotation matrix.} Because $\E^2=-\Id$, the exponential series splits into even and odd terms:
+\begin{align}
+  e^{\theta\E}
+  &=\sum_{n\ge0}\frac{\theta^n\E^n}{n!}
+   =\Big(1-\frac{\theta^2}{2!}+\frac{\theta^4}{4!}-\dots\Big)\Id+\Big(\theta-\frac{\theta^3}{3!}+\dots\Big)\E\notag\\
+  &=\cos\theta\,\Id+\sin\theta\,\E
+   =\begin{pmatrix}\cos\theta&-\sin\theta\\ \sin\theta&\cos\theta\end{pmatrix}
+   =:\mathsf{R}(\theta),
+  \label{eq:rot}
+\end{align}
+the anticlockwise rotation by $\theta$. In complex form this is $e^{i\theta}$.
+
+%=======================================================================
+\section{Constant excitation}
+%=======================================================================
+
+Let $\bq^\zeta$ be constant, so $\bw_s$ is constant and $\dot\bw_s=\mathbf{0}$.
+
+\begin{enumerate}
+  \item Define the departure from the static answer, $\be:=\bw-\bw_s$. Then
+  $\dot\be=\dot\bw$, and eq.~\eqref{eq:main} gives
+  \begin{equation}
+    \dot\be=\scw\,\E\,\be .
+  \end{equation}
+  \item This is a constant-coefficient linear ODE, with solution
+  \begin{equation}
+    \be(t)=e^{\scw\E t}\,\be(0)=\mathsf{R}(\scw t)\,\be(0),
+  \end{equation}
+  using eq.~\eqref{eq:rot}.
+  \item Hence
+  \begin{equation}
+    \boxed{\;\bw(t)=\bw_s+\mathsf{R}(\scw t)\,\big(\bw_0-\bw_s\big)\;}
+    \label{eq:const}
+  \end{equation}
+  \item Interpretation:
+  \begin{itemize}
+    \item $\mathsf{R}$ preserves length, so $|\bw-\bw_s|=|\bw_0-\bw_s|$ for all $t$. The pole moves on a
+    circle centred on the static answer.
+    \item The angle increases at rate $\scw$, anticlockwise, so the motion is prograde at the Chandler
+    frequency.
+    \item Nothing in eq.~\eqref{eq:const} decays, so the pole never settles.
+  \end{itemize}
+  \item \textbf{From rest.} With $\bw_0=\mathbf{0}$, $\be(0)=-\bw_s$. The radius is $|\bw_s|$, so
+  the free wobble has the same size as the static response, and the circle passes through the
+  origin.
+  \item \textbf{General $\K$.} The same steps with $\M:=\se\E(\Id-\K)$ and
+  $\bw_s:=(\Id-\K)^{-1}\bq^\zeta$ give $\dot\be=\M\be$, so
+  $\bw(t)=\bw_s+e^{\M t}(\bw_0-\bw_s)$. This is the form in N\S7. When $\K$ is symmetric
+  the eigenvalues of $\M$ are $\pm i\se\sqrt{\det(\Id-\K)}$ (N\S6.3), and the circle becomes a
+  slightly elliptical closed orbit.
+\end{enumerate}
+
+%=======================================================================
+\section{Periodic excitation}
+%=======================================================================
+
+\begin{enumerate}
+  \item \textbf{Circular forcing.} Take $m_s(t)=\hat m_s\,e^{i\nu t}$ with $\hat m_s$ a complex constant
+  (the static answer at the forcing frequency). $\nu>0$ is prograde circular forcing and $\nu<0$
+  retrograde.
+  \item \textbf{Trial solution.} Seek a particular solution at the same frequency,
+  $m(t)=\hat m\,e^{i\nu t}$. Then $\dot m=i\nu\,\hat m\,e^{i\nu t}$.
+  \item Substitute into eq.~\eqref{eq:mainc} and cancel the common factor $e^{i\nu t}$:
+  \begin{equation}
+    i\nu\,\hat m=i\scw\,(\hat m-\hat m_s).
+  \end{equation}
+  \item Cancel $i$ and collect the $\hat m$ terms:
+  \begin{equation}
+    (\scw-\nu)\,\hat m=\scw\,\hat m_s .
+  \end{equation}
+  \item Divide by $\scw-\nu$ (assuming $\nu\neq\scw$), then divide numerator and denominator by $\scw$:
+  \begin{equation}
+    \boxed{\;\frac{m_{\rm dynamic}}{m_{\rm static}}=\frac{\hat m}{\hat m_s}=\frac{\scw}{\scw-\nu}=\frac{1}{1-\nu/\scw}\;}
+    \label{eq:ratio}
+  \end{equation}
+  This is eq.~N(24). The ratio is real, so the dynamic response is exactly in phase or exactly in
+  antiphase with the static one.
+  \item \textbf{Real forcing.} A real vector forcing, e.g.\ $\bw_s=a\cos(\nu t)\,\be_1$, has
+  complex form $m_s=\tfrac a2(e^{i\nu t}+e^{-i\nu t})$. This is a prograde part at $+\nu$ and a
+  retrograde part at $-\nu$. By linearity each is multiplied by its own ratio, with $\nu\to+|\nu|$ and
+  $\nu\to-|\nu|$ respectively. Writing $\nu=2\pi/T$ and $\scw=2\pi/T_{\rm CW}$:
+  \begin{equation}
+    \text{prograde: }\frac{1}{1-T_{\rm CW}/T},\qquad
+    \text{retrograde: }\frac{1}{1+T_{\rm CW}/T}.
+  \end{equation}
+  \item \textbf{Free wobble.} The full solution adds the homogeneous solution $e^{i\scw t}c$, a free
+  wobble fixed by the initial condition. The ratio describes the forced response only.
+  \item \textbf{Behaviour.}
+  \begin{itemize}
+    \item $T\to\infty$: ratio $\to1$, the static limit.
+    \item $T=T_{\rm CW}$, prograde: the denominator vanishes. This is the resonance, and there is
+    none on the retrograde side because $1+T_{\rm CW}/T>1$.
+    \item $T<T_{\rm CW}$, prograde: $T_{\rm CW}/T>1$, so the ratio is negative. The response is reversed
+    in sign.
+    \item $T\ll T_{\rm CW}$: ratio $\approx-T/T_{\rm CW}$ prograde and $+T/T_{\rm CW}$ retrograde, so it is small.
+  \end{itemize}
+  \item \textbf{Table values.} For example, with $T_{\rm CW}=422.2$\,d and $T=365.25$\,d,
+  $T_{\rm CW}/T=1.156$:
+  \begin{equation*}
+    \text{prograde }\frac{1}{1-1.156}=-6.42,\qquad \text{retrograde }\frac{1}{1+1.156}=0.464 .
+  \end{equation*}
+  With $T=30$\,d, $T_{\rm CW}/T=14.07$, giving $-0.077$ and $0.066$. The other entries of the table in
+  N\S7 follow in the same way.
+\end{enumerate}
+
+\begin{center}
+\small
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+$T_{\rm CW}/T$ & 30\,d & 182.6\,d & 365.25\,d & $\to\infty$\\
+\midrule
+$T_{\rm CW}=476.0$\,d & 15.87 & 2.607 & 1.303 & 0\\
+$T_{\rm CW}=422.2$\,d & 14.07 & 2.312 & 1.156 & 0\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+%=======================================================================
+\section{Linear trend}
+%=======================================================================
+
+Let $\bq^\zeta=\dot\bq^\zeta t$ with $\dot\bq^\zeta$ constant, starting from rest. Then
+$\bw_s(t)=\dot\bw_s\,t$ with $\dot\bw_s=\dot\bq^\zeta/(1-\kappa)$. In complex form $m_s=b\,t$, with $b$ the
+complex form of $\dot\bw_s$.
+
+\begin{enumerate}
+  \item \textbf{Trial solution.} The forcing is linear in $t$, so try $m_p(t)=b\,t+c$ with $c$ a
+  complex constant. Then $\dot m_p=b$ and $m_p-m_s=c$.
+  \item Substitute into eq.~\eqref{eq:mainc}:
+  \begin{equation}
+    b=i\scw\,c .
+  \end{equation}
+  \item Solve, using $1/i=-i$:
+  \begin{equation}
+    c=\frac{b}{i\scw}=-\frac{i\,b}{\scw}.
+  \end{equation}
+  \item Translate back with eq.~\eqref{eq:Ei}: multiplication by $-i$ is $\E^T$. So
+  \begin{equation}
+    \bw_p(t)=\bw_s(t)+\frac{1}{\scw}\,\E^T\dot\bw_s .
+  \end{equation}
+  \item \textbf{Initial condition.} Add the homogeneous solution $e^{i\scw t}d$. From rest,
+  $m(0)=0$ requires $m_p(0)+d=c+d=0$, so $d=-c$. Hence
+  \begin{equation}
+    \boxed{\;\bw(t)=\bw_s(t)+\frac{1}{\scw}\E^T\dot\bw_s+\bw_{\rm free}(t),\qquad
+    \bw_{\rm free}(t)=-\mathsf{R}(\scw t)\,\frac{1}{\scw}\E^T\dot\bw_s\;}
+    \label{eq:trend}
+  \end{equation}
+  This is eq.~N(25). $|\bw_{\rm free}|=|c|$, so the free wobble has the same amplitude as the offset.
+  \item \textbf{The trend.} The only term growing with $t$ is $\bw_s(t)$, so the long-term rate is
+  exactly the static rate $\dot\bw_s$.
+  \item \textbf{Direction of the offset.} $\E^T\dot\bw_s$ is $\dot\bw_s$ rotated by $-90^\circ$, so it is
+  perpendicular to the trend, on its clockwise side (looking down from the north).
+  \item \textbf{Size of the offset.}
+  \begin{equation}
+    \Big|\frac{1}{\scw}\E^T\dot\bw_s\Big|=\frac{|\dot\bw_s|}{\scw}=|\dot\bw_s|\,\frac{T_{\rm CW}}{2\pi}.
+  \end{equation}
+  This is the distance the static pole travels in time $T_{\rm CW}/2\pi$: 75.8\,d for
+  $T_{\rm CW}=476.0$\,d and 67.2\,d for $T_{\rm CW}=422.2$\,d.
+  \item \textbf{Why it is not a lag.} A lag of $\tau$ would give
+  $\bw_s(t-\tau)=\bw_s(t)-\tau\dot\bw_s$, an offset \emph{parallel} to $\dot\bw_s$. The actual offset is
+  perpendicular to it.
+  \item \textbf{General $\K$.} With $\M=\se\E(\Id-\K)$ and $\bw_s=(\Id-\K)^{-1}\bq^\zeta$, eq.~\eqref{eq:start}
+  is $\dot\bw=\M(\bw-\bw_s)$. The trial solution $\bw_s(t)+\bc$ gives $\dot\bw_s=\M\bc$, so
+  $\bc=\M^{-1}\dot\bw_s$. For $\K=\kappa\Id$, $\M^{-1}=(\scw\E)^{-1}=\E^T/\scw$, recovering the result above.
+\end{enumerate}
+
+%=======================================================================
+\section{The damped form $\mathsf{L}=\se\E-\gamma\Id$ (N\S8.1)}
+%=======================================================================
+
+The elastic theory has no dissipation, so the damping in eq.~N(26) is not derived from the elastic
+equations. It is \emph{constructed}: it is the most general linear law that satisfies four
+requirements, and it contains one free parameter $\gamma$. The construction follows.
+
+\paragraph{Requirements.}
+\begin{enumerate}[label=(R\arabic*)]
+  \item \textbf{Linear and first order}, like eq.~\eqref{eq:start}: $\dot\bw$ is a linear function of $\bw$ and $\bq$.
+  \item \textbf{Unchanged static limit.} If $\bq$ is constant, $\bw=\bq$ must be a steady state, so damping
+  changes how the pole approaches the static answer, not the answer itself.
+  \item \textbf{Axisymmetry.} With $I_1=I_2$ and isotropic dissipation, the law cannot depend on the
+  choice of equatorial axes.
+  \item \textbf{Elastic limit.} With no dissipation it must reduce to $\dot\bw=\se\E(\bw-\bq)$.
+\end{enumerate}
+
+\paragraph{Step 1: form of the law (R1, R2).} By (R1), $\dot\bw=\mathsf{A}\bw-\mathsf{B}\bq$ for
+constant $2\times2$ matrices $\mathsf{A},\mathsf{B}$. By (R2), $\bw=\bq$ with $\dot\bw=\mathbf{0}$ must hold for
+every constant $\bq$, so $(\mathsf{A}-\mathsf{B})\bq=\mathbf{0}$ for all $\bq$, i.e.\ $\mathsf{B}=\mathsf{A}$.
+Writing $\mathsf{L}:=\mathsf{A}$,
+\begin{equation}
+  \dot\bw=\mathsf{L}\,(\bw-\bq).
+  \label{eq:Lform}
+\end{equation}
+
+\paragraph{Step 2: axisymmetry (R3).} Rotating the equatorial axes by $\theta$ maps $\bw\to\mathsf{R}(\theta)\bw$
+and $\bq\to\mathsf{R}(\theta)\bq$. Eq.~\eqref{eq:Lform} keeps its form for every $\theta$ only if
+$\mathsf{R}(\theta)\mathsf{L}=\mathsf{L}\mathsf{R}(\theta)$ for all $\theta$.
+\begin{enumerate}
+  \item Differentiate at $\theta=0$. Since $\mathsf{R}(\theta)=\cos\theta\,\Id+\sin\theta\,\E$ from
+  eq.~\eqref{eq:rot}, $\mathsf{R}'(0)=\E$. The condition therefore requires $\E\mathsf{L}=\mathsf{L}\E$.
+  Conversely, if $\mathsf{L}$ commutes with $\E$ it commutes with every $\cos\theta\,\Id+\sin\theta\,\E$.
+  \item Write $\mathsf{L}=\begin{psmallmatrix}a&b\\c&d\end{psmallmatrix}$. Then
+  \begin{equation}
+    \mathsf{L}\E=\begin{pmatrix}b&-a\\d&-c\end{pmatrix},\qquad
+    \E\mathsf{L}=\begin{pmatrix}-c&-d\\a&b\end{pmatrix}.
+  \end{equation}
+  \item Equating entries: $b=-c$ and $a=d$. So
+  \begin{equation}
+    \mathsf{L}=\begin{pmatrix}a&b\\-b&a\end{pmatrix}=a\,\Id-b\,\E .
+  \end{equation}
+  Rename the two real constants: $\mathsf{L}=\beta\E-\gamma\Id$ with $\beta=-b$ and $\gamma=-a$.
+\end{enumerate}
+
+\paragraph{Step 3: elastic limit (R4).} With no dissipation, $\mathsf{L}$ must equal $\se\E$. So
+$\beta=\se$, and $\gamma$ is the one remaining parameter, which vanishes without dissipation:
+\begin{equation}
+  \boxed{\;\mathsf{L}=\se\E-\gamma\Id\;}
+\end{equation}
+
+\paragraph{Step 4: sign of $\gamma$ and $Q$.} Take $\K=\kappa\Id$, so $\bq=\bq^\zeta+\kappa\bw$, and set
+$\bq^\zeta=\mathbf{0}$ for the free motion:
+\begin{enumerate}
+  \item Eq.~\eqref{eq:Lform} gives $\dot\bw=\mathsf{L}(1-\kappa)\bw=(1-\kappa)(\se\E-\gamma\Id)\bw$.
+  \item In complex form ($\E\to i$): $\dot m=(1-\kappa)(i\se-\gamma)\,m=(i\scw-\gamma(1-\kappa))\,m$, using
+  $\scw=\se(1-\kappa)$.
+  \item Solution: $m(t)=m_0\,e^{i\scw t}\,e^{-\gamma(1-\kappa)t}$. The pole still circles at $\scw$,
+  and its amplitude decays at rate $\gamma(1-\kappa)$. Decay requires $\gamma>0$.
+  \item The quality factor of a free oscillation at frequency $\scw$ is defined by the amplitude
+  decaying as $e^{-\scw t/(2Q)}$. Equating the rates, $\scw/(2Q)=\gamma(1-\kappa)$, so
+  \begin{equation}
+    Q=\frac{\scw}{2\gamma(1-\kappa)}=\frac{\se(1-\kappa)}{2\gamma(1-\kappa)}=\frac{\se}{2\gamma},
+    \qquad\gamma=\frac{\se}{2Q}.
+  \end{equation}
+\end{enumerate}
+
+\paragraph{Step 5: relation to Munk \& MacDonald.} Their damped wobble equation is
+$\dot m=i\tilde\sigma\,(m-\chi)$ with a complex frequency $\tilde\sigma$. Writing $\tilde\sigma=\se+i\gamma$
+gives $i\tilde\sigma=i\se-\gamma$, which by eq.~\eqref{eq:Ei} is exactly $\se\E-\gamma\Id$. The
+construction above is therefore the Munk--MacDonald form, written for the undamped Euler frequency
+with the feedback $\K$ generated by the sea-level iteration rather than folded into $\tilde\sigma$.
+
+\paragraph{Remarks.}
+\begin{itemize}
+  \item Because $\bq=\bq^\zeta+\K\bw$, $\mathsf{L}(\bw-\bq)=\mathsf{L}[(\Id-\K)\bw-\bq^\zeta]$. Damping
+  the departure from $\bq$ and damping the departure from the static answer are the same thing.
+  \item $\gamma$ is a single phenomenological constant. Physically the dissipation comes from mantle
+  anelasticity, i.e.\ frequency-dependent Love numbers (N\S9). The constant-$\gamma$ form reproduces a
+  given $Q$ at the Chandler frequency, but not the frequency dependence away from it.
+  \item With an anisotropic ocean $\K$, (R3) holds only approximately. Assuming isotropic dissipation
+  is then a modelling choice, not a consequence of symmetry.
+\end{itemize}
+
+\end{document}

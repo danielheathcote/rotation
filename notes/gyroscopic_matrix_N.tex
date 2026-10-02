@@ -1,0 +1,214 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{amsmath,amssymb,bm,mathtools}
+\usepackage{enumitem}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue]{hyperref}
+
+\newcommand{\bw}{\bm{\omega}}
+\newcommand{\bq}{\mathbf{q}}
+\newcommand{\bj}{\mathbf{j}}
+\newcommand{\bh}{\mathbf{h}}
+\newcommand{\bk}{\mathbf{k}}
+\newcommand{\bN}{\mathbf{N}}
+\newcommand{\bGamma}{\bm{\Gamma}}
+\newcommand{\It}{\tilde{\mathbf{I}}}
+\newcommand{\E}{\mathsf{E}}
+\newcommand{\Id}{\mathsf{1}}
+\newcommand{\K}{\mathsf{K}}
+\newcommand{\Lm}{\mathsf{L}}
+\newcommand{\se}{\sigma_{\mathrm e}}
+\newcommand{\Aw}{A_{\mathrm w}}
+\newcommand{\dd}{\,\mathrm{d}}
+
+\title{The gyroscopic matrix $\bN$:\\ how the fluid core and damping enter}
+\author{Working notes (prepared with Claude) --- to be checked}
+\date{1 October 2026}
+
+\begin{document}
+\maketitle
+
+\noindent This note expands on the matrix $\bN$ of \S10.1 of \texttt{rotation\_dynamic\_elastic.pdf}
+(equation numbers prefixed by ``N'' refer to that note). $\bN$ multiplies $\dot\bw$ in the rotational
+row of the weak form,
+\begin{equation}
+  (\It\bw+\bN\dot\bw-\bj+\bk)\cdot\bw'=0,
+  \label{eq:row}
+\end{equation}
+and carries everything about the inertia of the rotation vector itself. The fluid core and the
+damping each change $\bN$, in different ways: the core rescales it, and damping adds a new part.
+Throughout, $\E=\begin{psmallmatrix}0&-1\\1&0\end{psmallmatrix}$, with $\E^2=-\Id$, $\E^T=-\E$ and
+$\E^{-1}=-\E$. The equatorial (top-left $2\times2$) block of $\bN$ is written $\bN_\perp$.
+
+%=======================================================================
+\section{Where $\bN$ comes from: no core, no damping}
+%=======================================================================
+
+\begin{enumerate}
+  \item Start from the equatorial Liouville equation, eq.~N(10), with $\bh=\bGamma=\mathbf{0}$:
+  \begin{equation}
+    I_1\dot\bw+\dot\bj=\Omega\E\big[(I_3-I_1)\bw-\bj\big].
+  \end{equation}
+  \item Drop $\dot\bj$, which is $O(\nu/\Omega)$ relative to the retained terms (N\S4.2):
+  \begin{equation}
+    I_1\dot\bw=\Omega\E\big[(I_3-I_1)\bw-\bj\big].
+  \end{equation}
+  \item Multiply both sides on the left by $\E^{-1}/\Omega=-\E/\Omega$. On the right this removes $\Omega\E$:
+  \begin{equation}
+    -\frac{I_1}{\Omega}\E\dot\bw=(I_3-I_1)\bw-\bj .
+  \end{equation}
+  \item Add $(I_1/\Omega)\E\dot\bw+\bj$ to both sides:
+  \begin{equation}
+    \boxed{\;(I_3-I_1)\bw+\frac{I_1}{\Omega}\E\,\dot\bw=\bj\;}
+  \end{equation}
+  \item Comparing with eq.~\eqref{eq:row} (with $\bk=\mathbf{0}$), the equatorial block of $\It$ is
+  $(I_3-I_1)\Id$ and
+  \begin{equation}
+    \bN_\perp=\frac{I_1}{\Omega}\,\E .
+  \end{equation}
+  This is a multiple of $\E$, and therefore antisymmetric.
+  \item \textbf{Axial part.} The third row and column of $\bN$ are zero, so the axial component
+  satisfies $-I_3\omega_3=j_3$. This is algebraic: $\omega_3$ has no memory.
+  \item \textbf{Static limit.} Setting $\dot\bw=\mathbf{0}$ recovers AA24's static relation $\It\bw=\bj$.
+\end{enumerate}
+
+%=======================================================================
+\section{The fluid core: it rescales $\bN$}
+%=======================================================================
+
+\begin{enumerate}
+  \item With the core, the relative angular momentum is no longer zero. To leading order in $\nu/\Omega$
+  (N\S4.1),
+  \begin{equation}
+    \bh_{\rm core}\approx\frac{A_f}{\Omega}\,\E\dot\bw,
+  \end{equation}
+  where $A_f$ is the fluid core's equatorial moment. The core's rotation differs from the mantle's by
+  only $O(\epsilon)$ of $\bw$.
+  \item This is small, but it enters the Liouville equation, eq.~N(10), through the term $-\Omega\E\bh$:
+  \begin{equation}
+    I_1\dot\bw+\dot\bh=\Omega\E\big[(I_3-I_1)\bw-\bj\big]-\Omega\E\bh .
+  \end{equation}
+  \item Evaluate the new term. The factor $\Omega$ cancels the $1/\Omega$, and $\E^2=-\Id$ flips the sign:
+  \begin{equation}
+    -\Omega\E\bh_{\rm core}=-\Omega\E\,\frac{A_f}{\Omega}\E\dot\bw=-A_f\E^2\dot\bw=+A_f\dot\bw .
+  \end{equation}
+  \item Move it to the left-hand side:
+  \begin{equation}
+    (I_1-A_f)\dot\bw+\dot\bh_{\rm core}=\Omega\E\big[(I_3-I_1)\bw-\bj\big].
+  \end{equation}
+  \item $\dot\bh_{\rm core}=(A_f/\Omega)\E\ddot\bw$ is a further factor $\nu/\Omega$ smaller than
+  $A_f\dot\bw$, so drop it. With $A_m:=I_1-A_f$, the mantle's equatorial moment,
+  \begin{equation}
+    A_m\dot\bw=\Omega\E\big[(I_3-I_1)\bw-\bj\big].
+  \end{equation}
+  \item Repeating steps 3--5 of \S1 with $I_1$ replaced by $A_m$:
+  \begin{equation}
+    \boxed{\;\bN_\perp=\frac{A_m}{\Omega}\,\E\;}
+  \end{equation}
+  \item \textbf{Interpretation.} The core only rescales $\bN$. It stays a multiple of $\E$, and so stays
+  antisymmetric. Writing $\Aw$ for ``$I_1$ or $A_m$'', and allowing a triaxial Earth, the full matrix is
+  \begin{equation}
+    \bN=\frac{1}{\Omega}\begin{pmatrix}0&-A_{w,2}&0\\A_{w,1}&0&0\\0&0&0\end{pmatrix}.
+  \end{equation}
+  \item Nothing else in the problem changes. The static limit is untouched, since it does not involve
+  $\bN$, and the Euler frequency becomes $\se=\Omega(I_3-I_1)/\Aw$. PREM gives $A_f/I_1=0.113$.
+\end{enumerate}
+
+%=======================================================================
+\section{Damping: it adds a symmetric part to $\bN$}
+%=======================================================================
+
+\begin{enumerate}
+  \item The solver uses the damped law (N\S8.1)
+  \begin{equation}
+    \dot\bw=\Lm(\bw-\bq),\qquad \Lm=\se\E-\gamma\Id,\qquad \bq=\frac{\bj}{I_3-I_1}.
+  \end{equation}
+  To put it in the form of eq.~\eqref{eq:row}, invert $\Lm$.
+  \item Multiply $\Lm$ by $-\se\E-\gamma\Id$, using $\E^2=-\Id$:
+  \begin{equation}
+    (\se\E-\gamma\Id)(-\se\E-\gamma\Id)=-\se^2\E^2-\se\gamma\E+\se\gamma\E+\gamma^2\Id=(\se^2+\gamma^2)\Id .
+  \end{equation}
+  \item Hence
+  \begin{equation}
+    \Lm^{-1}=-\frac{\se\E+\gamma\Id}{\se^2+\gamma^2}.
+  \end{equation}
+  \item Multiply the damped law on the left by $\Lm^{-1}$: $\Lm^{-1}\dot\bw=\bw-\bq$.
+  \item Multiply by $-(I_3-I_1)$ and use $(I_3-I_1)\bq=\bj$:
+  \begin{equation}
+    \boxed{\;(I_3-I_1)\bw+\frac{(I_3-I_1)(\se\E+\gamma\Id)}{\se^2+\gamma^2}\,\dot\bw=\bj\;}
+  \end{equation}
+  So with damping,
+  \begin{equation}
+    \bN_\perp=\frac{(I_3-I_1)(\se\E+\gamma\Id)}{\se^2+\gamma^2}.
+  \end{equation}
+  \item \textbf{Check.} At $\gamma=0$: $\bN_\perp=(I_3-I_1)\E/\se=(I_3-I_1)\E\,\Aw/[\Omega(I_3-I_1)]=(\Aw/\Omega)\E$,
+  as in \S\S1--2.
+  \item \textbf{Split into two parts.} $\bN_\perp=\bN_a+\bN_s$, with
+  \begin{align}
+    \bN_a&=\frac{(I_3-I_1)\se}{\se^2+\gamma^2}\,\E=\frac{\Aw}{\Omega}\,\frac{1}{1+\gamma^2/\se^2}\,\E
+    &&\text{(antisymmetric, gyroscopic)},\\
+    \bN_s&=\frac{(I_3-I_1)\gamma}{\se^2+\gamma^2}\,\Id
+    &&\text{(symmetric, dissipative)}.
+  \end{align}
+  \item \textbf{Sizes.} With $\gamma=\se/(2Q)$, $\gamma/\se=1/(2Q)=0.005$ for $Q=100$.
+  \begin{itemize}
+    \item $\bN_a$ is the undamped $\bN$ reduced by the factor $1/(1+\gamma^2/\se^2)$, i.e.\ by $2.5\times10^{-5}$.
+    This is negligible.
+    \item $\bN_s$ is new. Its size relative to $\bN_a$ is $\gamma/\se=1/(2Q)$.
+  \end{itemize}
+\end{enumerate}
+
+%=======================================================================
+\section{Why the split matters: an energy identity}
+%=======================================================================
+
+\begin{enumerate}
+  \item Consider free motion: no direct load, so $\bj=(I_3-I_1)\K\bw$ (N\S6.2). The equatorial
+  rotational row becomes
+  \begin{equation}
+    (I_3-I_1)(\Id-\K)\bw+\bN\dot\bw=\mathbf{0}.
+  \end{equation}
+  \item Take the dot product with $\dot\bw$:
+  \begin{equation}
+    (I_3-I_1)\,\dot\bw^T(\Id-\K)\bw+\dot\bw^T\bN_a\dot\bw+\dot\bw^T\bN_s\dot\bw=0.
+  \end{equation}
+  \item The antisymmetric part does no work. $\dot\bw^T\bN_a\dot\bw$ is a number, so it equals its
+  transpose, $\dot\bw^T\bN_a^T\dot\bw=-\dot\bw^T\bN_a\dot\bw$. It is therefore zero.
+  \item $\Id-\K$ is symmetric, so $\dot\bw^T(\Id-\K)\bw=\frac{\dd}{\dd t}\big[\tfrac12\bw^T(\Id-\K)\bw\big]$.
+  \item Hence
+  \begin{equation}
+    \boxed{\;\frac{\dd}{\dd t}\Big[\tfrac12(I_3-I_1)\,\bw^T(\Id-\K)\bw\Big]=-\dot\bw^T\bN_s\dot\bw\le0\;}
+  \end{equation}
+  The inequality holds because $\bN_s$ is a positive multiple of $\Id$ when $\gamma>0$.
+  \item \textbf{Consequences.}
+  \begin{itemize}
+    \item With $\gamma=0$ the bracketed ``energy'' is conserved. This is the conserved quantity that
+    makes the free orbit an ellipse in the detailed derivation note
+    of \S7.
+    \item With $\gamma>0$, $\bN_s$ drains it, so the wobble decays.
+    \item The core changes only $\bN_a$. It therefore changes the wobble frequency but not the decay.
+  \end{itemize}
+\end{enumerate}
+
+%=======================================================================
+\section{Why the main note writes things in terms of $\bN$}
+%=======================================================================
+
+\begin{enumerate}
+  \item The reciprocity argument (N\S10.2) needs only $\bN$. The adjoint problem uses $\bN^\dagger=-\bN^T$.
+  \item Transposing flips the sign of the antisymmetric part and keeps the symmetric part, so
+  \begin{equation}
+    -\bN^T=-(\bN_a+\bN_s)^T=\bN_a-\bN_s .
+  \end{equation}
+  \item Run backwards in time, $\dd/\dd t\to-\dd/\dd\tau$, this becomes $-\bN_a+\bN_s$ (N\S10.3):
+  \begin{itemize}
+    \item the gyroscopic part is reversed, i.e.\ the rotation is reversed;
+    \item the dissipative part is kept, so the adjoint is damped in reversed time just as the
+    forward problem is in forward time.
+  \end{itemize}
+  \item Both the core (a rescaled $\bN_a$) and the damping (an added $\bN_s$) therefore fit the same
+  reciprocity theorem, with no new derivation needed.
+  \item In the forward solver itself, the equivalent form $\dot\bw=\Lm(\bw-\bq)$, with $\se$ built from
+  $\Aw$, is simpler to use (N\S8). The two forms describe the same equation.
+\end{enumerate}
+
+\end{document}

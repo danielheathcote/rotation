@@ -1,0 +1,1186 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{amsmath,amssymb,bm,mathtools}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{framed}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+
+% --- vectors and tensors (Al-Attar et al. 2024 notation, with I for the background inertia tensor)
+\newcommand{\bO}{\bm{\Omega}}
+\newcommand{\bw}{\bm{\omega}}
+\newcommand{\bx}{\mathbf{x}}
+\newcommand{\bu}{\mathbf{u}}
+\newcommand{\ba}{\mathbf{a}}
+\newcommand{\bb}{\mathbf{b}}
+\newcommand{\bt}{\mathbf{t}}
+\newcommand{\bj}{\mathbf{j}}
+\newcommand{\bc}{\mathbf{c}}
+\newcommand{\bk}{\mathbf{k}}
+\newcommand{\bh}{\mathbf{h}}
+\newcommand{\bq}{\mathbf{q}}
+\newcommand{\bl}{\bm{\ell}}
+\newcommand{\bchi}{\bm{\chi}}
+\newcommand{\bI}{\mathbf{I}}
+\newcommand{\It}{\tilde{\mathbf{I}}}
+\newcommand{\bN}{\mathbf{N}}
+\newcommand{\bGam}{\bm{\Gamma}}
+\newcommand{\bn}{\hat{\mathbf{n}}}
+\newcommand{\be}{\hat{\mathbf{e}}}
+\newcommand{\E}{\mathsf{E}}
+\newcommand{\Id}{\mathsf{1}}
+\newcommand{\R}{\mathsf{R}}
+\newcommand{\Sm}{\mathsf{S}}
+\newcommand{\K}{\mathsf{K}}
+\newcommand{\W}{\mathsf{W}}
+\newcommand{\dd}{\,\mathrm{d}}
+\newcommand{\pM}{\partial M}
+\newcommand{\se}{\sigma_{\mathrm e}}
+\newcommand{\scw}{\sigma_{\mathrm{CW}}}
+\newcommand{\Aw}{A_{\mathrm w}}
+
+\definecolor{rembar}{RGB}{70,110,170}
+\renewenvironment{leftbar}{%
+  \def\FrameCommand{{\color{rembar}\vrule width 2.5pt}\hspace{8pt}}%
+  \MakeFramed{\advance\hsize-\width\FrameRestore}}%
+  {\endMakeFramed}
+\newenvironment{remark}[1][Remark]{\begin{leftbar}\small\noindent\textbf{#1.}\ }{\end{leftbar}}
+
+\title{Dynamic rotational feedbacks in the elastic sea-level problem:\\
+governing equations and iterative forward solution}
+\author{Working notes (prepared with Claude) --- to be checked}
+\date{29 September 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+This note is the single reference for the dynamic extension of the rotational sea-level theory of
+Al-Attar et al.\ (2024; hereafter AA24). It supersedes \texttt{rotation\_alattar\_notation.pdf} and
+\texttt{rotation\_forward\_problem.pdf} (hereafter Note~1 and the companion note), whose logic is
+audited in Appendix~\ref{app:audit}. The earth model is elastic, the ocean is hydrostatic, there is
+no relative angular momentum apart from the leading-order effect of the fluid core, and no external
+torque acts. With these assumptions, AA24's static Euler relation between the rotation vector and
+the inertia perturbation is replaced by the linearised Liouville equation, and nothing else
+changes. The only memory in the problem is then the equatorial rotation vector, a single 2-vector.
+The main result is a practical one (\S\ref{sec:solve}): the forward problem is solved by marching in time,
+running the existing static fixed-point iteration at each step with one line changed. An exact
+superposition method, which needs no change to \texttt{pyslfp}, provides an independent check.
+Iterating over the whole time history at once is shown not to work. Extensions (relative angular
+momentum, torques, anelasticity) are indicated where they would enter, and the generalised
+problem and its reciprocity theorem are given in \S\ref{sec:recip}. Section~\ref{sec:data} shows
+that for data corrected for the pole tide in the standard way, the load-driven rotation cancels from
+the observables altogether. The dynamic theory then matters mainly for uncorrected data, for polar
+motion itself, and for understanding.
+\end{abstract}
+
+\tableofcontents
+
+%=======================================================================
+\section{Scope, assumptions and notation}
+\label{sec:scope}
+%=======================================================================
+
+\paragraph{The problem.} Given a direct load $\zeta(\bx,t)$ on $t\in[0,T]$ (for ice,
+$\zeta=\rho_i(1-C)\Delta I$), find the sea-level change $\xi$, displacement $\bu$, gravitational
+potential perturbation $\phi$ and rotation-vector perturbation $\bw$ as functions of time.
+
+\paragraph{Assumptions.}
+\begin{enumerate}[label=(A\arabic*),leftmargin=3em]
+  \item \textbf{Elastic, quasi-static deformation.} The momentum equation is split by projecting it
+  onto rigid rotations and onto deformations. The rigid-rotation projection, taken in the Tisserand
+  frame, is the Liouville equation, in which all inertial terms are kept (\S\ref{sec:liouville}). In
+  particular, the Euler force $-\rho\dot\bw\times\bx$ does no work on Tisserand-frame deformations,
+  since $\int_M\rho\,(\dot\bw\times\bx)\cdot\bu\dd V=\dot\bw\cdot\int_M\rho\,\bx\times\bu\dd V=0$. It
+  therefore enters only through its torque, which is the retained term $\bI\dot\bw$. The deformational projection is the
+  quasi-static elastic problem: $(\bu,\phi)$ respond instantaneously to the current load and
+  centrifugal potential. The inertial and Coriolis forces dropped there are smaller than the elastic
+  restoring force by $(\nu/\omega_0)^2$ and $2(\nu/\Omega)(\Omega/\omega_0)^2\approx3\times10^{-3}\,\nu/\Omega$,
+  where $\omega_0$ is the frequency of the gravest normal mode ${}_0S_2$.
+  \item \textbf{Hydrostatic ocean, fixed shorelines.} The sea surface is at every instant an
+  equipotential of the gravitational plus centrifugal potential, and the ocean function $C$ does
+  not change. The ocean-free problem is the special case $C=0$.
+  \item \textbf{No relative angular momentum}, $\bh=\mathbf{0}$, except for the fluid core.
+  Displacements are measured in a Tisserand frame, with no rigid rotation of the solid Earth.
+  Currents, the atmosphere and the transport of meltwater carry no angular momentum relative to that
+  frame. The fluid outer core is different: its relative angular momentum $\bh_{\rm core}$ is driven
+  by the wobble itself. It is small, but its gyroscopic term $\Omega\E\bh_{\rm core}$ is a fraction
+  $A_f/I_1\approx0.11$ of the retained $I_1\dot\bw$. With the core, the frame is the Tisserand frame of
+  the mantle, and the Euler-force argument of (A1) integrates over the mantle. Its leading-order effect is included through
+  the wobble inertia $\Aw$ (\S\ref{sec:liouville}). Setting $\Aw=I_1$ recovers the strict
+  assumption $\bh=\mathbf{0}$.
+  \item \textbf{No external torque}, $\bGam=\mathbf{0}$.
+  \item \textbf{Reference state as in AA24.} The elastic--gravitational operator comes from a
+  spherically symmetric model, and $\bI$ is the observed inertia tensor with $\bO=\Omega\be_3$
+  along the axis of greatest moment. Derivations are for general $I_1\le I_2<I_3$. The
+  implementation, like \texttt{pyslfp}, uses $I_1=I_2$.
+\end{enumerate}
+(A3) and (A4) are relaxed in \S\ref{sec:ext}, which shows that any other $\bh$, and $\bGam$, enter
+only as additional excitation.
+
+\paragraph{Ordering.} Let $\nu$ be a typical forcing frequency. The theory treats
+$\nu/\se=O(1)$ exactly, where $\se=\Omega(I_3-I_1)/\Aw$ is the Euler frequency, and drops terms
+of relative size $\epsilon:=\nu/\Omega$ and $\delta:=(I_3-I_1)/I_1\approx3.3\times10^{-3}$.
+Section~\ref{sec:order} lists the neglected effects by their actual size. The largest, the fluid
+core (about 11\% of the retained inertial term), is included through $\Aw$. The recommended default
+configuration is $\Aw=A_m$, an equilibrium ocean and damping with $Q\approx100$.
+
+\paragraph{Notation.} The notation follows AA24, with three changes. The background inertia tensor
+is $\bI$ (AA24's $\mathbf{C}$), so the ocean function keeps the symbol $C$ without a clash.
+Sea-level change is $\xi$ (AA24's $\Delta SL$), as in Heathcote et al.\ (2026). The gyroscopic matrix is
+$\bN$.
+
+\begin{center}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+Symbol & Meaning & AA24\\
+\midrule
+$\bI$, $I_1\le I_2<I_3$ & background inertia tensor and principal moments & $\mathbf{C}$, $C_i$\\
+$\bc$ & first-order perturbation of the inertia tensor & $\mathbf{c}$\\
+$\bj=\bc\bO$ & inertia perturbation contracted with $\bO$ & $\mathbf{j}$\\
+$\It=\mathrm{diag}(I_3-I_1,\,I_3-I_2,\,-I_3)$ & static rotation matrix & $\tilde{\mathbf{C}}$\\
+$\bO=\Omega\be_3$, $\bw$ & reference rotation vector and its perturbation & same\\
+$\Psi$, $\psi$ & centrifugal potential and its perturbation & same\\
+$\Phi$, $\phi$ & gravitational potential and its perturbation (Eulerian) & same\\
+$\bu$ & displacement & same\\
+$\xi$ & sea-level change & $\Delta SL$\\
+$C$ & ocean function & $C$\\
+$\sigma$, $\zeta$ & total and direct surface loads & same\\
+$\bk$ & AA24 rotational forcing ($\bk=-\bh$ statically) & $\mathbf{k}$\\
+$\bh$, $\bGam$ & relative angular momentum, external torque & ---\\
+$\bN$ & gyroscopic matrix, eq.~\eqref{eq:N} & ---\\
+$\Aw$; $A_f$, $A_m=I_1-A_f$ & wobble inertia; fluid-core and mantle equatorial moments & ---\\
+$\E=\begin{pmatrix}0&-1\\1&0\end{pmatrix}$ & $+90^\circ$ rotation of equatorial 2-vectors & ---\\
+\bottomrule
+\end{tabular}
+\end{center}
+Subscripts $\perp$ and $\parallel$ denote components orthogonal and parallel to $\be_3$. Where
+no confusion arises, $\bw$ and $\bj$ also denote their equatorial 2-vectors $(\omega_1,\omega_2)$ and
+$(j_1,j_2)$. Sign conventions are those of AA24. $\Phi$ increases outwards, so
+$\nabla\Phi=g\bn$ at the surface of a spherical model, and the geoid perturbation is $-\phi/g$.
+
+%=======================================================================
+\section{What the observations see}
+\label{sec:data}
+%=======================================================================
+
+Before building any rotational machinery, it is worth asking which rotational signals survive in the
+data.
+
+\paragraph{Decomposition.} The problem is linear. Any observable can therefore be written as
+\begin{equation}
+  d=d^\zeta[\zeta]+\mathsf{X}_d\,\bw_\perp,
+  \label{eq:dsplit}
+\end{equation}
+where $d^\zeta$ is the response to the load with the rotation held at zero (the ocean still
+responds), and $\mathsf{X}_d$ is the full response to a unit prescribed rotation (\S\ref{sec:schemeB}).
+This holds for the static and dynamic theories alike: they differ only in $\bw_\perp(t)$.
+
+\paragraph{Pole-tide corrections.} Standard processing of GRACE (IERS Conventions; Petit \& Luzum 2010),
+of satellite altimetry (Desai et al.\ 2015) and of GNSS removes a modelled pole tide. It is computed
+from the \emph{observed} polar motion $\bw_{\rm obs}$ relative to a conventional mean pole
+$\bar{\mathbf m}(t)$:
+$d_{\rm corr}=d-\mathsf{X}^{\rm corr}_d(\bw_{\rm obs}-\bar{\mathbf m})$. Whatever its cause,
+$\bw_{\rm obs}$ is the true rotation. If the correction model matches the physics,
+$\mathsf{X}^{\rm corr}_d=\mathsf{X}_d$, then (noting that IERS $y_p$ is positive towards $90^\circ$W, so
+$\bw_{\rm obs}/\Omega=(x_p,-y_p)$, and that the observed pole differs from $\bw$ by an $O(\epsilon)$
+term)
+\begin{equation}
+  \boxed{\;d_{\rm corr}=d^\zeta[\zeta]+\mathsf{X}_d\,\bar{\mathbf m}\;}
+  \label{eq:dcorr}
+\end{equation}
+The load-driven rotation cancels exactly, whether it is static or dynamic.
+
+\paragraph{Consequences.}
+\begin{enumerate}
+  \item For pole-tide-corrected products, the observation operator for $\zeta$ is the
+  \emph{non-rotating} one, plus a known offset from the conventional mean pole. For trend
+  inversions, only $\dot{\bar{\mathbf m}}$ enters. Neither the static nor the dynamic rotational
+  theory is then needed for these data.
+  \item The rotational physics left in corrected data is the model mismatch
+  $(\mathsf{X}_d-\mathsf{X}^{\rm corr}_d)(\bw_{\rm obs}-\bar{\mathbf m})$. Sources include the
+  anelastic $k_2$ used by the IERS, the ocean pole-tide model and the mean-pole convention. This
+  mismatch acts mainly on the atmospherically and oceanically excited Chandler and annual wobbles,
+  not on the load-driven part.
+  \item The dynamic theory is needed for data not corrected for the pole tide (usually tide gauges),
+  for polar motion itself used as data, and for understanding. For uncorrected data, the true
+  rotation also contains excitation that (A3) excludes and the model cannot reproduce.
+  \item The altimetry convention used in \texttt{pyslfp} (Lickley et al.\ 2018; Heathcote et
+  al.\ 2026) removes only the direct term $\psi/g$ from modelled sea-surface height. It keeps the
+  load-driven solid-Earth and ocean pole tides, and so matches neither uncorrected nor corrected data.
+\end{enumerate}
+All of this depends on the conventions of each product: which mean pole is used, and which
+pole-tide models. These should be settled for the specific data sets before Scheme~1
+(\S\ref{sec:schemeA}) is used in inversions.
+
+%=======================================================================
+\section{The static problem (AA24 \S\S2--3, restated)}
+\label{sec:static}
+%=======================================================================
+
+\paragraph{Elastic loading.} For a surface load $\sigma$, $(\bu,\phi)$ satisfy
+\begin{equation}
+  A(\bu,\phi\,|\,\bu',\phi')+\int_{\pM}(\bu'\cdot\nabla\Phi+\phi')\,\sigma\dd S=0
+  \qquad\text{for all }(\bu',\phi'),
+  \label{eq:weak0}
+\end{equation}
+where the bilinear form $A$ is symmetric under exchange of the pairs $(\bu,\phi)$ and
+$(\bu',\phi')$, and vanishes on linearised rigid-body motions (AA24 eqs.~1--4).
+
+\paragraph{Sea level and load.} With rotation,
+\begin{equation}
+  \xi=-\frac1g\,(\bu\cdot\nabla\Phi+\phi+\psi)+\frac{\Phi_g}{g},\qquad
+  \sigma=\zeta+\rho_w C\,\xi,\qquad \int_{\pM}\sigma\dd S=0,
+  \label{eq:sl}
+\end{equation}
+where the constant $\Phi_g$ is fixed by the mass constraint (AA24 eqs.~10--11, 53).
+
+\paragraph{Centrifugal potential.} From $\Psi=-\tfrac12\|\bO\times\bx\|^2$,
+\begin{equation}
+  \psi=-(\bO\times\bx)\cdot(\bw\times\bx),\qquad
+  \nabla\psi=\bO\times(\bw\times\bx)+\bw\times(\bO\times\bx).
+  \label{eq:psi}
+\end{equation}
+With $\bO=\Omega\be_3$, $\psi=\Omega\,[\,x_3(\omega_1x_1+\omega_2x_2)-\omega_3(x_1^2+x_2^2)\,]$.
+The equatorial components of $\bw$ generate a degree-2, order-1 potential. $\omega_3$ generates
+degree-0 and degree-2, order-0 terms.
+
+\paragraph{Inertia identity.} The inertia perturbation produced by a load $\sigma$ and the
+resulting displacement $\bu$ satisfies, for every constant vector $\bw'$ with associated
+$\psi'$ (AA24 eqs.~46--49),
+\begin{equation}
+  \bw'\cdot\bj+\int_M\rho\,\bu\cdot\nabla\psi'\dd V+\int_{\pM}\sigma\,\psi'\dd S=0 .
+  \label{eq:inertia}
+\end{equation}
+This is a statement about the mass distribution at one instant. It therefore holds unchanged, at
+each $t$, in the dynamic problem.
+
+\paragraph{Static rotation.} The steady Euler equation $\bO\times(\bI\bO)=\mathbf{0}$, perturbed
+to first order, together with conservation of $\|\mathbf{L}\|$, gives $\It\bw=\bj$ (AA24
+eqs.~36--42). The static problem in weak form is
+\begin{equation}
+  A(\bu,\phi\,|\,\bu',\phi')+\int_{\pM}(\bu'\cdot\nabla\Phi+\phi')\,\sigma\dd S
+  +\int_M\rho\,\bu'\cdot\nabla\psi\dd V+(\It\bw-\bj)\cdot\bw'=0,
+  \label{eq:weakstatic}
+\end{equation}
+for all $(\bu',\phi',\bw')$. Here $-\rho\nabla\psi$ is the centrifugal body force (AA24 eq.~50).
+AA24's generalised forcings $(\bt,\zeta_\phi,\bk)$ are deferred to \S\ref{sec:gen}. \S\ref{sec:liouville}
+shows that both halves of $\It\bw=\bj$ are limits of the Liouville equation.
+
+%=======================================================================
+\section{Rotational dynamics: the linearised Liouville equation}
+\label{sec:liouville}
+%=======================================================================
+
+\subsection{The full first-order equation}
+
+In the Earth-fixed frame, which rotates with $\bO+\bw$, the angular momentum
+$\mathbf{L}=(\bI+\bc)(\bO+\bw)+\bh$ obeys
+$\dot{\mathbf{L}}+(\bO+\bw)\times\mathbf{L}=\bGam$. Linearising, with $\bI\bO=I_3\bO$, gives
+\begin{equation}
+  \frac{\dd}{\dd t}\big(\bI\bw+\bj+\bh\big)+\bO\times\big(\bI\bw+\bj+\bh\big)+\bw\times(\bI\bO)=\bGam .
+  \label{eq:liouville}
+\end{equation}
+In components with general $I_1,I_2$:
+\begin{align}
+  I_1\dot\omega_1+(I_3-I_2)\Omega\,\omega_2&=\Omega(j_2+h_2)-(\dot j_1+\dot h_1)+\Gamma_1,\notag\\
+  I_2\dot\omega_2-(I_3-I_1)\Omega\,\omega_1&=-\Omega(j_1+h_1)-(\dot j_2+\dot h_2)+\Gamma_2,
+  \label{eq:components}\\
+  I_3\dot\omega_3&=-(\dot j_3+\dot h_3)+\Gamma_3.\notag
+\end{align}
+With $j_\perp=\Omega(c_{13},c_{23})$ these are the classical Liouville equations (Munk \& MacDonald
+1960). The steady, unperturbed case is $\bO\times(\bI\bO)=\mathbf{0}$.
+
+For $I_1=I_2$, the equatorial pair takes the compact 2-vector form
+\begin{equation}
+  I_1\dot\bw+\dot\bj+\dot\bh=\Omega\,\E\big[(I_3-I_1)\bw-\bj-\bh\big]+\bGam ,
+  \label{eq:eqE}
+\end{equation}
+which can be rearranged exactly as
+\begin{equation}
+  \boxed{\;\dot\bw=\se\,\E\,(\bw-\bchi),\qquad
+  \bchi=\frac{1}{I_3-I_1}\Big[\bj+\bh+\frac{1}{\Omega}\E\big(\bGam-\dot\bj-\dot\bh\big)\Big]\;}
+  \label{eq:chi}
+\end{equation}
+with $\se=\Omega(I_3-I_1)/I_1$ for the moment.
+Here $\bchi$ is the (geodetic) excitation. Eqs.~\eqref{eq:eqE} and \eqref{eq:chi} were checked
+symbolically against eq.~\eqref{eq:liouville}.
+
+\paragraph{Fluid core and the wobble inertia.} A fluid outer core is coupled to the mantle through
+pressure on the elliptical core--mantle boundary. To leading order in $\nu/\Omega$, its relative
+rotation is $\E\dot\bw/\Omega$, which is $O(\epsilon)$ relative to $\bw$: the core almost follows the
+wobble. Its relative angular momentum in the mantle frame is
+$\bh_{\rm core}\approx(A_f/\Omega)\E\dot\bw$, where $A_f$ is its equatorial moment. The term
+$-\Omega\E\bh_{\rm core}=A_f\dot\bw$ in eq.~\eqref{eq:eqE} is then of the same kind as $I_1\dot\bw$
+and a fraction $A_f/I_1$ of it. It cannot be ordered away, and $\dot\bh_{\rm core}$ is smaller by
+a further factor $\nu/\Omega$. The net effect is to replace $I_1$ by the mantle moment
+$A_m=I_1-A_f$ in the $\dot\bw$ term only (Smith \& Dahlen 1981). Write $\Aw$ for this
+\emph{wobble inertia}: $\Aw=I_1$ under the strict form of (A3), and $\Aw=A_m$ with the core. PREM
+gives $A_f/I_1=0.113$, so $A_m/I_1=0.887$. From here on,
+\begin{equation}
+  \se:=\frac{\Omega(I_3-I_1)}{\Aw},
+  \label{eq:se}
+\end{equation}
+with period 304.5\,d for $\Aw=I_1$ and 270.1\,d for $\Aw=A_m$. The static limit does not involve
+$\Aw$ and is unchanged. The Love numbers relevant to the wobble also differ slightly when the core is
+decoupled (Smith \& Dahlen 1981). That effect is neglected here.
+
+\subsection{Ordering, and the leading-order equation}
+\label{sec:order}
+
+Scale time by the Euler frequency, $\tau=\se t$. With $\bh=\bGam=\mathbf{0}$ (the core now being
+carried by $\Aw$), eq.~\eqref{eq:chi} becomes
+\begin{equation}
+  \frac{\dd\bw}{\dd\tau}=\E(\bw-\bchi),\qquad
+  \bchi=\frac{1}{I_3-I_1}\Big[\bj-\delta_w\,\E\frac{\dd\bj}{\dd\tau}\Big],\qquad
+  \delta_w:=\frac{\se}{\Omega}=\frac{I_3-I_1}{\Aw},
+  \label{eq:scaled}
+\end{equation}
+with $\delta_w=3.3\times10^{-3}$ for $\Aw=I_1$ and $3.7\times10^{-3}$ for $\Aw=A_m$. In the natural
+limit $\nu/\se=O(1)$, the rotation responds on the forcing timescale. For $\Aw=I_1$, $\nu/\se$ is
+10.2 at a period of one month, 0.83 at one year and 0.08 at ten years. The only small parameter left
+is $\delta_w$. The $\dd\bj/\dd\tau$ term is a uniform correction to the excitation of relative size
+$\delta_w\,\nu/\se=\nu/\Omega=\epsilon$: about 3\% at monthly periods and 0.3\% at annual periods. It
+is dropped, as in the standard geodetic excitation functions (Barnes et al.\ 1983; Gross 2015).
+Keeping it would be harmless but not systematically better, because the relative angular momentum
+of the transported meltwater, excluded by (A3), is of the same order.
+
+The \textbf{leading-order equations} are
+\begin{equation}
+  \boxed{\;\dot\bw_\perp=\se\,\E\,(\bw_\perp-\bq),\qquad \bq:=\frac{\bj_\perp}{I_3-I_1};
+  \qquad\qquad I_3\,\omega_3=-j_3\;}
+  \label{eq:leading}
+\end{equation}
+with $\se$ from eq.~\eqref{eq:se}.
+The axial relation follows from the third of eqs.~\eqref{eq:components} integrated from a
+quiescent start. It is algebraic and carries no memory, which is why AA24's use of $\|\mathbf{L}\|$
+conservation is exact at this order. (On sub-decadal timescales the core is also largely
+decoupled axially, which would replace $I_3$ by the mantle's polar moment. This is not pursued
+here, since $\omega_3$ is neglected in the implementation.)
+
+\paragraph{Neglected effects, by size.}
+\begin{itemize}
+  \item \emph{Anelasticity.} It lengthens the Chandler period by about 8\,d (2\%) and gives
+  $Q\approx100$ (Smith \& Dahlen 1981). It can be represented by the damping of \S\ref{sec:timestep}.
+  \item \emph{Non-equilibrium ocean pole tide.} Its size is set by ocean dynamics, not by $\nu/\Omega$.
+  The observed pole tide is close to the self-consistent equilibrium response (Desai 2002).
+  \item \emph{$\dot\bj$ and the meltwater $\bh$:} $O(\epsilon)$, as above.
+  \item \emph{Ellipticity of the elastic response}, i.e.\ spherically symmetric Love numbers:
+  $O(\delta)$, since the flattening $1/298\approx\delta$. This is comparable to the $O(\epsilon)$
+  terms near the annual band ($\epsilon=\delta$ at periods of about 300\,d).
+  \item \emph{Solid-Earth inertial and Coriolis forces in the deformation}:
+  $(\nu/\omega_0)^2$ and $3\times10^{-3}\epsilon$ (A1). These are negligible.
+\end{itemize}
+If $\Aw=I_1$ is used, the fluid core ($\approx11\%$ of the retained term) heads this list.
+
+\paragraph{What controls the response.} The dimensionless forcing frequency that matters for the
+response is $\nu/\scw$, not $\nu/\se$, where $\scw$ is the free (Chandler) frequency of
+\S\ref{sec:spectral}. At one year $\nu/\scw$ is 1.30 ($\Aw=I_1$) or 1.16 ($\Aw=A_m$). The annual
+band therefore lies just beyond the resonance, which is why the annual factors in \S\ref{sec:behaviour}
+are large and negative.
+
+\paragraph{Static limit.} Setting $\dot\bw=\mathbf{0}$ gives $\bw_\perp=\bq$, i.e.\
+$(I_3-I_1)\bw_\perp=\bj_\perp$, which is AA24's eq.~38. The static and dynamic theories share the
+same $\bq$. The only difference is that the static theory \emph{assigns} $\bw_\perp=\bq$, whereas the
+dynamic theory makes $\bw_\perp$ \emph{relax towards} $\bq$ by circling it (\S\ref{sec:behaviour}).
+
+\paragraph{Matrix form.} For general $I_1,I_2$, eqs.~\eqref{eq:components} at leading order are
+\begin{equation}
+  \It\bw+\bN\dot\bw=\bj,\qquad
+  \bN=\frac{1}{\Omega}\begin{pmatrix}0&-A_{w,2}&0\\ A_{w,1}&0&0\\0&0&0\end{pmatrix},
+  \label{eq:N}
+\end{equation}
+where $A_{w,i}=I_i$, or the mantle moments with the core. Without the core,
+$\bN\mathbf{v}=\Omega^{-2}\bO\times(\bI\mathbf{v})$. $\bN$ has no axial part, so the axial row is
+exactly $-I_3\omega_3=j_3$. $\bN$ is antisymmetric if and only if $A_{w,1}=A_{w,2}$, in which case
+its equatorial block is $(\Aw/\Omega)\E$. The antisymmetry
+matters only for reciprocity (\S\ref{sec:recip}). The forward solver works equally well for
+$I_1\neq I_2$.
+
+%=======================================================================
+\section{The dynamic forward problem}
+\label{sec:problem}
+%=======================================================================
+
+Collecting eqs.~\eqref{eq:sl}, \eqref{eq:inertia}, \eqref{eq:weakstatic} and \eqref{eq:N}: for
+each $t\in[0,T]$ and all test functions $(\bu',\phi',\bw')$,
+\begin{equation}
+  \boxed{\;A(\bu,\phi\,|\,\bu',\phi')+\int_{\pM}(\bu'\cdot\nabla\Phi+\phi')\,\sigma\dd S
+  +\int_M\rho\,\bu'\cdot\nabla\psi\dd V+(\It\bw+\bN\dot\bw-\bj)\cdot\bw'=0\;}
+  \label{eq:weakdyn}
+\end{equation}
+with $\bw(0)=\bw_0$, where $\sigma=\zeta+\rho_wC\xi$, $\xi$ is given by eq.~\eqref{eq:sl}, $\int_{\pM}\sigma\dd S=0$, and
+$\bj$ is the inertia perturbation of the current configuration.
+
+\paragraph{Structure.} Everything in eq.~\eqref{eq:weakdyn} except $\bN\dot\bw$ is instantaneous.
+If $\bw(t)$ were known, the fields at each $t$ would follow from a static fingerprint problem with
+the rotation vector \emph{prescribed}, i.e.\ with no rotation update. The problem therefore splits
+into
+\begin{enumerate}[label=(\roman*)]
+  \item an instantaneous map $(\zeta(t),\bw(t))\mapsto(\xi,\bu,\phi,\bq)(t)$, which is the static
+  solver with $\bw$ held fixed; and
+  \item the 2-vector ODE $\dot\bw_\perp=\se\E(\bw_\perp-\bq)$, plus the algebraic $\omega_3$.
+\end{enumerate}
+The whole memory of the system is $\bw_\perp(t)$. Every method in \S\ref{sec:solve} is a way of
+coupling (i) and (ii).
+
+\paragraph{Initial state.} Take $t=0$ as the reference epoch, with $\zeta(0)=0$ and $\bw_0=\mathbf{0}$.
+If a load $\zeta_0$ has been in place long enough for equilibrium, instead set $\bw_0$ to the
+static solution for $\zeta_0$, which also gives $\bq_0=\bw_0$. Starting with $\zeta(0)\neq0$ and
+$\bw_0=\mathbf{0}$ is inconsistent: it excites a spurious free wobble whose amplitude equals the
+static response to $\zeta_0$. A free wobble genuinely present at $t=0$ is not determined by the
+loads, and $\bw_0$ must then be prescribed.
+
+%=======================================================================
+\section{Spherically symmetric implementation}
+\label{sec:spectral}
+%=======================================================================
+
+\subsection{Love numbers and the rotational terms}
+
+With $\sigma=\sum\sigma_{lm}Y_{lm}$ (orthonormal real harmonics, no Condon--Shortley phase), AA24
+eq.~60 gives $u_{lm}=h_l\sigma_{lm}$ and $\phi_{lm}=k_l\sigma_{lm}$. Here AA24's $k_l$ includes the
+potential of the load itself. The centrifugal perturbation $\psi$ acts on the Earth like a tidal potential. The deformation it
+causes adds $h^T_2\psi_{21}$ to the $(2,1)$ coefficient of the displacement and $k^T_2\psi_{21}$ to that
+of $\phi$, where $h^T_2$ and $k^T_2$ are tidal Love numbers. Here $\phi$ is the potential of the Earth's
+redistributed mass only and does not contain $\psi$ itself. This differs from AA24's loading $k_l$,
+which includes the potential of the load. Writing
+$\bm\phi_{21}=(\phi^c_{21},\phi^s_{21})$ at radius $b$ (the mean sea-floor radius in
+\texttt{pyslfp}):
+\begin{equation}
+  \bm\psi_{21}=r\,\bw_\perp,\quad r=\sqrt{\tfrac{4\pi}{15}}\,\Omega b^2;\qquad\qquad
+  \bq=\beta\,\bm\phi_{21},\quad
+  \beta=\sqrt{\tfrac{5}{12\pi}}\,\frac{\Omega b^3}{G(I_3-I_1)} .
+  \label{eq:rbeta}
+\end{equation}
+The first relation follows from $\psi=\Omega x_3(\omega_1x_1+\omega_2x_2)$ and
+$Y^c_{21}=\sqrt{15/4\pi}\,x_1x_3/r^2$. The second is MacCullagh's formula: the exterior degree-2
+potential of the perturbed mass has $\phi^c_{21}=\sqrt{12\pi/5}\,Gc_{13}/b^3$, and similarly for
+$\phi^s_{21}$ with $c_{23}$, while $\bj_\perp=\Omega(c_{13},c_{23})$. Here $\bm\phi_{21}$ is the potential of
+\emph{all} perturbed mass (load, internal deformation, and the tidal response to $\psi$) but not
+$\psi$ itself. It therefore contains both terms of eq.~\eqref{eq:inertia} automatically. In
+\texttt{pyslfp}, $r$ and $\beta$ are \texttt{rotation\_factor} and \texttt{inertia\_factor}, and the static update is
+\texttt{angular\_velocity\_change = i * potential\_change\_lm.coeffs[:, 2, 1]}, i.e.\ $\bw_\perp\leftarrow\bq$.
+
+\subsection{The rotational feedback matrix}
+\label{sec:K}
+
+Because map (i) is linear,
+\begin{equation}
+  \bq(t)=\bq^\zeta(t)+\K\,\bw_\perp(t).
+  \label{eq:K}
+\end{equation}
+Here $\bq^\zeta$ is the excitation from the direct load, with the ocean responding and $\bw\equiv\mathbf{0}$.
+$\K$ is a constant $2\times2$ matrix giving the excitation raised by a unit rotation, through the
+solid Earth's tidal yielding and the equilibrium ocean pole tide. With no ocean,
+$\K=\kappa\Id$ with
+\begin{equation}
+  \kappa=\beta r k^T_2=\frac{k_2^T}{k_s},\qquad k_s=\frac{3G(I_3-I_1)}{\Omega^2b^5}.
+  \label{eq:kappa}
+\end{equation}
+
+\paragraph{General form of $\K$.} A unit rotation raises $\bm\psi_{21}=r\be_\alpha$. That changes
+the degree-2, order-1 inertia by two routes. The solid Earth yields tidally, adding $k^T_2\bm\psi_{21}$
+to $\bm\phi_{21}$; this is the $\kappa\Id$ above. The ocean follows the rotational equipotential, and the
+degree-2, order-1 part of the resulting water load adds $k_2\bm\sigma_{21}$. The forcing sea level is
+$-\gamma_2\psi/g$ plus a constant, where $\gamma_2=1+k^T_2-h^T_2\approx0.69$ is the usual diminishing
+factor (dimensionless Love numbers). Hence
+\begin{equation}
+  \K=\kappa\Id+\K_{\rm oc},\qquad
+  \K_{\rm oc}=\frac{1}{k_s}\,\frac{3\rho_w}{5\bar\rho}\,(1+k'_2)\,\gamma_2\;\mathsf{Q},\qquad
+  \mathsf{Q}_{\alpha\beta}=\int C\,Y^\alpha_{21}\,\hat\xi^\beta\dd\Omega ,
+  \label{eq:Kform}
+\end{equation}
+where $k'_2$ is the degree-2 load Love number, $\bar\rho$ the mean density, and the integral runs over
+the unit sphere. Here $\hat\xi^\beta$ is the sea level produced by a unit forcing $Y^\beta_{21}$, with
+the ocean's self-attraction and loading and with mass conserved. Without self-attraction and loading,
+$\mathsf{Q}_{\alpha\beta}=\int CY^\alpha Y^\beta\dd\Omega-(\int CY^\alpha\dd\Omega)(\int CY^\beta\dd\Omega)/A_{\rm oc}$,
+which measures how much the two harmonics overlap over the ocean. The second term is the
+mass-conservation correction. $\K_{\rm oc}$ is positive definite and anisotropic because the ocean
+geometry is. For present-day oceans this overlap matrix is
+$\begin{psmallmatrix}0.785&-0.021\\-0.021&0.621\end{psmallmatrix}$, and the prefactor is $0.055$.
+Together they reproduce the off-diagonal of $\K_{\rm oc}$ in eq.~\eqref{eq:Knum} below almost
+exactly. On the diagonal, self-attraction and loading amplify it by 19\%.
+
+\paragraph{$\K$ is symmetric.} Let $(\bu^a,\phi^a,\sigma^a)$ and $(\bu^b,\phi^b,\sigma^b)$ be the
+responses to prescribed rotations $\bw^a,\bw^b$ with no direct load. Using the static weak form
+without its rotation row, once with each solution as the test function, and using the symmetry of $A$:
+\begin{equation*}
+  \int_{\pM}(\bu^b\!\cdot\!\nabla\Phi+\phi^b)\sigma^a\dd S+\int_M\rho\,\bu^b\!\cdot\!\nabla\psi^a\dd V
+  =\int_{\pM}(\bu^a\!\cdot\!\nabla\Phi+\phi^a)\sigma^b\dd S+\int_M\rho\,\bu^a\!\cdot\!\nabla\psi^b\dd V .
+\end{equation*}
+Eq.~\eqref{eq:inertia} then gives
+\begin{equation*}
+  \bw^b\cdot\bj^a-\bw^a\cdot\bj^b
+  =\int_{\pM}(\bu^a\!\cdot\!\nabla\Phi+\phi^a+\psi^a)\sigma^b\dd S-\int_{\pM}(\bu^b\!\cdot\!\nabla\Phi+\phi^b+\psi^b)\sigma^a\dd S .
+\end{equation*}
+Substitute eq.~\eqref{eq:sl} with $\sigma=\rho_wC\xi$. The constants $\Phi_g$ drop out by mass conservation,
+and what remains is $-g\rho_w\int C\xi^a\xi^b+g\rho_w\int C\xi^b\xi^a=0$. Hence
+$\bw^b\cdot\bj^a=\bw^a\cdot\bj^b$, and with $\bj^a=(I_3-I_1)\K\bw^a$, $\K=\K^T$. For
+$I_1\neq I_2$ the same argument shows that the matrix taking $\bw_\perp$ to $\bj_\perp$ is symmetric.
+
+\paragraph{Numbers.} The \texttt{pyslfp} constants give $k_s=0.951$ and, with $k^T_2=0.2986$,
+$\kappa=0.314$. \texttt{pyslfp} takes $\Omega=2\pi/86400$\,s$^{-1}$ (solar day). The sidereal
+$7.2921\times10^{-5}$\,s$^{-1}$ should be used instead. It lowers $k_s$ by 0.55\%, raises $\kappa$
+and $\K$ by the same factor, and shortens the Euler period by 0.27\%, but it changes the Chandler
+periods below by less than 0.3\,d. The numbers here use the \texttt{pyslfp} constants. Two static \texttt{pyslfp} solves at $l_{\max}=64$ with
+present-day oceans (the method is in \S\ref{sec:schemeB}) give
+\begin{equation}
+  \K=\begin{pmatrix}0.3655&-0.0012\\-0.0012&0.3550\end{pmatrix},
+  \label{eq:Knum}
+\end{equation}
+which is symmetric to $2\times10^{-15}$. The ocean pole tide therefore adds about $0.04$--$0.05$ to
+the solid-Earth $\kappa$, anisotropically.
+
+\subsection{Free wobble}
+
+Substituting eq.~\eqref{eq:K} into eq.~\eqref{eq:leading},
+\begin{equation}
+  \dot\bw_\perp=\se\,\E\big[(\Id-\K)\bw_\perp-\bq^\zeta\big].
+  \label{eq:reduced}
+\end{equation}
+Because $\K$ is symmetric, $\E(\Id-\K)$ has zero trace. Its eigenvalues therefore satisfy
+$\lambda^2=-\det(\Id-\K)$, and because $\Id-\K$ is positive definite they are purely imaginary,
+$\pm i\scw$, with
+\begin{equation}
+  \scw=\se\sqrt{\det(\Id-\K)}.
+  \label{eq:scw}
+\end{equation}
+\begin{center}
+\small
+\begin{tabular}{@{}lcc@{}}
+\toprule
+$T_{\rm CW}$ & no ocean & equilibrium ocean\\
+\midrule
+$\Aw=I_1$ (no core) & 444.0\,d & 476.0\,d\\
+$\Aw=A_m$ (fluid core) & 393.7\,d & 422.2\,d\\
+\bottomrule
+\end{tabular}
+\end{center}
+The equilibrium ocean lengthens the period by about 30\,d (Dahlen 1976), and the core shortens it by
+11\%. The free motion is undamped and, because $\K$ is slightly anisotropic, slightly elliptical.
+Smith \& Dahlen (1981) obtained 426.7 sidereal days (425.5\,d) for an elastic Earth with a fluid core
+and an equilibrium ocean. The observed period is about 433\,d. So $\Aw=A_m$ is within 1\% of the
+complete elastic value, and the remaining 8\,d is attributed to anelasticity.
+
+%=======================================================================
+\section{What the equation does: analytic solutions for testing}
+\label{sec:behaviour}
+%=======================================================================
+
+The solutions below come from eq.~\eqref{eq:reduced} with $\K=\kappa\Id$ and no damping, or from its complex form
+$m=\omega_1+i\omega_2$, in which $\E$ becomes multiplication by $i$. They double as test cases for a
+solver.
+
+\paragraph{Constant excitation.} With $\bw_s:=(\Id-\K)^{-1}\bq^\zeta$ the static answer,
+$\bw_\perp(t)=\bw_s+\exp[\se\E(\Id-\K)t]\,(\bw_0-\bw_s)$. The rotation vector circles the static
+answer at the Chandler rate, prograde, and never settles. A load switched on at $t=0$ from rest
+excites a free wobble whose radius equals the static response.
+
+\paragraph{Periodic excitation.} For $\bq^\zeta\propto e^{i\nu t}$ ($\nu>0$ prograde, $\nu<0$ retrograde),
+\begin{equation}
+  \frac{m_{\rm dynamic}}{m_{\rm static}}=\frac{1}{1-\nu/\scw},
+  \label{eq:ratio}
+\end{equation}
+which is a resonance on the prograde side only (isotropic approximation, using each configuration's $T_{\rm CW}$):
+\begin{center}
+\small
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Forcing period & 30\,d & 182.6\,d & 365.25\,d & $\to\infty$\\
+\midrule
+prograde, $T_{\rm CW}=476$\,d ($\Aw=I_1$) & $-0.067$ & $-0.62$ & $-3.30$ & $1$\\
+retrograde, $T_{\rm CW}=476$\,d & $0.059$ & $0.28$ & $0.43$ & $1$\\
+prograde, $T_{\rm CW}=422$\,d ($\Aw=A_m$) & $-0.077$ & $-0.76$ & $-6.42$ & $1$\\
+retrograde, $T_{\rm CW}=422$\,d & $0.066$ & $0.30$ & $0.46$ & $1$\\
+\bottomrule
+\end{tabular}
+\end{center}
+At monthly periods the polar motion is an order of magnitude smaller than static theory predicts
+and of opposite sign. At annual periods the prograde part is amplified several-fold, by an amount
+sensitive to $T_{\rm CW}$: $-5.4$ at the observed 433\,d. These factors multiply the rotational \emph{correction} to sea level, not
+sea level itself.
+
+\paragraph{Linear trend.} For $\bq^\zeta=\dot\bq^\zeta t$ from rest,
+\begin{equation}
+  \bw_\perp(t)=\bw_s(t)+\frac{1}{\scw}\,\E^T\,\dot\bw_s+\bw_{\rm free}(t),\qquad
+  \bw_s(t)=\frac{\dot\bq^\zeta t}{1-\kappa},
+  \label{eq:trend}
+\end{equation}
+where $\bw_{\rm free}$ is a free wobble of the same amplitude as the constant offset. The trend is
+exactly the static one. The offset $\E^T\dot\bw_s/\scw$ is \emph{perpendicular} to the trend: the pole
+is displaced sideways from the static path by the distance the static pole travels in
+$T_{\rm CW}/2\pi$. That is 76\,d for $T_{\rm CW}=476$\,d and 67\,d for 422\,d. It is not a lag along
+the path, which would be parallel to the trend. Decadal trends are therefore unaffected, while
+sub-annual variability is.
+
+%=======================================================================
+\section{Solving the forward problem iteratively}
+\label{sec:solve}
+%=======================================================================
+
+\subsection{Time discretisation}
+\label{sec:timestep}
+
+The elastic theory has no dissipation, so its free wobble never decays. The real Chandler wobble
+has $Q\approx100$, mainly from mantle anelasticity. The solver therefore integrates
+\begin{equation}
+  \dot\bw_\perp=\mathsf{L}\,(\bw_\perp-\bq),\qquad \mathsf{L}=\se\E-\gamma\Id,
+  \label{eq:damped}
+\end{equation}
+where $\gamma\ge0$ is a phenomenological damping of the Munk--MacDonald type. It leaves the static
+limit unchanged. With $\K=\kappa\Id$ the free mode is $e^{(i\scw-\gamma(1-\kappa))t}$, so
+$Q=\se/2\gamma$. The recommended default for applications is $Q\approx100$. Setting $\gamma=0$
+recovers the purely elastic theory, which is used for the checks of \S\ref{sec:checks}. Damping
+preserves reciprocity (\S\ref{sec:adjoint}).
+
+Apply the trapezoidal rule on a grid $t_n=n\Delta t$, with $\bw_n=\bw_\perp(t_n)$, $\bq_n=\bq(t_n)$ and
+$h=\Delta t/2$:
+\begin{equation}
+  \boxed{\;\bw_{n+1}=\R\,\bw_n+\Sm\,(\bq_n+\bq_{n+1}),\qquad
+  \R=(\Id-h\mathsf{L})^{-1}(\Id+h\mathsf{L}),\qquad \Sm=-(\Id-h\mathsf{L})^{-1}h\mathsf{L}\;}
+  \label{eq:step}
+\end{equation}
+For $\gamma=0$ and $a=\se\Delta t/2$, these are
+$\R=[(1-a^2)\Id+2a\E]/(1+a^2)$ and $\Sm=(a^2\Id-a\E)/(1+a^2)$.
+Properties:
+\begin{itemize}
+  \item $\R+2\Sm=\Id$, so a steady state $\bw=\bq$ is preserved exactly. For $\gamma=0$, $\R$ is an
+  exact rotation by $2\arctan a$, so the scheme adds no numerical damping of its own.
+  \item $\|\Sm\|<1$ at every $\Delta t$, with $\|\Sm\|=a/\sqrt{1+a^2}$ for $\gamma=0$. This follows
+  because $\mathsf{L}$ is normal with eigenvalues of non-positive real part. It is what makes the
+  inner iteration of \S\ref{sec:schemeA} converge unconditionally.
+  \item \textbf{Accuracy.} With feedback, the discrete free mode is a rotation by
+  $2\arctan(a_{\rm CW})$ per step, $a_{\rm CW}=\scw\Delta t/2$, so the period is too long by about
+  $a_{\rm CW}^2/3$: 0.09\% for weekly steps and 1.7\% for monthly steps (429.3 against 422.2\,d in the default configuration). The
+  phase error accumulates over a run. In a 20-year test with weekly steps the maximum error in
+  $\bw$ was 3.5\%. For long runs, use $\Delta t$ of a week or less, or use the exact propagator of
+  \S\ref{sec:schemeB}.
+  \item Backward Euler, $\bw_{n+1}=[(\Id+b\E)\bw_n+(b^2\Id-b\E)\bq_{n+1}]/(1+b^2)$ with
+  $b=\se\Delta t$ (for $\gamma=0$), damps the wobble numerically but tends to the static solution
+  as $\Delta t\to\infty$. It is useful only as a check against the static solver.
+  \item \textbf{Units.} \texttt{pyslfp} is non-dimensional. Compute $\se$ from
+  \texttt{rotation\_frequency}, the two moments and $A_f/I_1=0.113$ (PREM; not in \texttt{pyslfp}), and express $\Delta t$ in units of
+  \texttt{time\_scale}.
+\end{itemize}
+
+\subsection{Scheme 1: march in time with an inner fixed-point iteration (recommended)}
+\label{sec:schemeA}
+
+The static solver already iterates between the load, the fields and $\bw$. Only its rotation update
+changes. Given the converged $\bw_n$ and $\bq_n$ from the previous step and the load $\zeta_{n+1}$:
+\begin{center}
+\fbox{\begin{minipage}{0.93\linewidth}
+\begin{enumerate}
+  \item Initialise $\bw^{(0)}=\bw_n$ and the load $\sigma^{(0)}$ (a warm start from the converged
+  $\sigma_n$ is better than a cold one).
+  \item For $k=0,1,\dots$ until the load converges:
+  \begin{enumerate}
+    \item $\bm\psi_{21}=r\,\bw^{(k)}$;
+    \item $u_{lm}=h_l\sigma^{(k)}_{lm}$, $\phi_{lm}=k_l\sigma^{(k)}_{lm}$, adding $h^T_2\bm\psi_{21}$
+    and $k^T_2\bm\psi_{21}$ at $(2,1)$;
+    \item $\bq^{(k)}=\beta\bm\phi_{21}$;
+    \item \textbf{the only change:} $\bw^{(k+1)}=\R\bw_n+\Sm(\bq_n+\bq^{(k)})$, in place of the
+    static $\bw^{(k+1)}=\bq^{(k)}$;
+    \item add $r\bw^{(k+1)}$ to $\bm\phi_{21}$, form $\xi$ from eq.~\eqref{eq:sl}, and set
+    $\sigma^{(k+1)}=\zeta_{n+1}+\rho_wC\xi$.
+  \end{enumerate}
+  \item Store $\bw_{n+1}=\bw^{(k+1)}$ and $\bq_{n+1}=\bq^{(k)}$, the latter computed with $\phi$ excluding $\psi$.
+\end{enumerate}
+\end{minipage}}
+\end{center}
+In \texttt{pyslfp} this is a copy of \texttt{solve\_generalised\_equation} with the rotation
+update replaced:
+\begin{verbatim}
+    q = i * potential_change_lm.coeffs[:, 2, 1]
+    if angular_momentum_change is not None:
+        q -= m * angular_momentum_change
+    angular_velocity_change = R @ w_old + S @ (q_old + q)
+\end{verbatim}
+\sloppy The copy takes \texttt{w\_old} and \texttt{q\_old} as inputs and returns the converged \texttt{q}. The \texttt{angular\_momentum\_change} lines carry the generalised forcing $\bk$ of \S\ref{sec:gen}
+and are inactive in a forward run.
+The static solver is the case $\R=0$, $\Sm=\Id$ with the $\bq_n$ term removed.
+
+\paragraph{Convergence.} With the ocean converged, the rotational part of the inner iteration is
+$\bw\mapsto\R\bw_n+\Sm(\bq_n+\bq^\zeta_{n+1}+\K\bw)$. It contracts by
+$\|\Sm\K\|\le\|\Sm\|\,\kappa_{\max}<0.37$ at every step size and forcing frequency, and more
+strongly for small steps. In a test with the $\K$ of eq.~\eqref{eq:Knum} and weekly steps, the
+iteration reached $10^{-14}$ in about 10 iterations. In practice the ocean-load iteration, which is
+the same as in the static solver, dominates the iteration count.
+
+\paragraph{Why this is the recommended solver.} It is the smallest change to working code. It
+never iterates over time: the problem is causal, so step $n+1$ needs only the two 2-vectors
+$\bw_n,\bq_n$. It is also the scheme that survives the extensions of \S\ref{sec:ext}: moving
+shorelines (a nonlinear static solve per step), damping or anelastic memory (extra state variables
+carried alongside $\bw_n$), and $\bh$ or $\bGam$ (additional terms in $\bq$).
+
+\subsection{Scheme 2: exact elimination of the rotation (verification and fast path)}
+\label{sec:schemeB}
+
+Because map (i) of \S\ref{sec:problem} is linear and time-invariant, $\bw$ can be eliminated exactly.
+This needs no change to \texttt{pyslfp}.
+\begin{enumerate}
+  \item \textbf{Rotational basis (two solves).} For $\mu=1,2$, run the \emph{static} generalised
+  solver with no load and rotational forcing $\bk=\be_\mu$ (\S\ref{sec:gen}), used here purely as a
+  numerical device. Since $\bk$ enters only the rotation row, the resulting
+  fields $X[\be_\mu]=(\xi,\bu,\phi)$ are those of the rotation
+  $\bw^{(\mu)}$ that the solver returns. With $\W=[\bw^{(1)}\ \bw^{(2)}]$, the static relation
+  $\bw=\K\bw-\bk/(I_3-I_1)$ gives
+  \begin{equation}
+    \K=\Id+\frac{\W^{-1}}{I_3-I_1},\qquad
+    X^\alpha=\sum_\mu X[\be_\mu]\,(\W^{-1})_{\mu\alpha},
+    \label{eq:basis}
+  \end{equation}
+  where $X^\alpha$ is the full response to a unit prescribed rotation $\bw_\perp=\be_\alpha$ with the ocean
+  responding. This is how eq.~\eqref{eq:Knum} was computed.
+  \item \textbf{Non-rotating solves.} For each $t_n$, solve with $\zeta_n$ and
+  \texttt{rotational\_feedbacks=False}. This gives $X^\zeta_n$ and $\bq^\zeta_n=\beta\bm\phi^\zeta_{21}$.
+  These solves are independent and can be run in parallel.
+  \item \textbf{Rotation.} Integrate eq.~\eqref{eq:reduced}. With the trapezoidal rule the step is
+  the $2\times2$ solve $(\Id-\Sm\K)\bw_{n+1}=\R\bw_n+\Sm(\bq_n+\bq^\zeta_{n+1})$, where
+  $\bq_n=\bq^\zeta_n+\K\bw_n$. This reproduces Scheme~1 exactly: they agreed to $5\times10^{-14}$ in
+  the test. Alternatively, with $\mathsf{M}=\mathsf{L}(\Id-\K)$, $\mathbf{f}=-\mathsf{L}\bq^\zeta$ taken
+  piecewise linear, $\mathsf{P}_0=e^{\mathsf{M}\Delta t}$, $\mathsf{P}_1=\mathsf{M}^{-1}(\mathsf{P}_0-\Id)$ and
+  $\mathsf{P}_2=\mathsf{M}^{-1}(\mathsf{P}_1/\Delta t-\Id)$, the step
+  $\bw_{n+1}=\mathsf{P}_0\bw_n+\mathsf{P}_1\mathbf{f}_n+\mathsf{P}_2(\mathbf{f}_{n+1}-\mathbf{f}_n)$
+  is exact and has no period error.
+  \item \textbf{Reassemble:} $X_n=X^\zeta_n+\sum_\alpha\omega_{\alpha,n}X^\alpha$.
+\end{enumerate}
+The cost is two extra solves, and changing the damping, the time step or the initial wobble
+requires no further sea-level solves. It fails as soon as the problem is nonlinear (moving
+shorelines) or the response has memory in (i) (viscoelasticity). That is why it is the check
+rather than the main solver.
+
+\subsection{Why not iterate over the whole time history?}
+\label{sec:waveform}
+
+The alternative (Method~B of the earlier companion note) guesses $\xi(\bx,t)$ for all $t$, builds the
+excitation history, integrates the wobble ODE over $[0,T]$, recomputes $\xi$ everywhere, and
+repeats. Its fixed point is the same, but it has two problems.
+
+\paragraph{It diverges in the band of interest.} If the propagator uses $\se$, the loop must
+generate the whole feedback $\K$. One lap then has gain $\kappa/|1-\nu/\se|$ at frequency
+$\nu$. This exceeds one for periods between $T_e/(1+\kappa)=206$\,d and $T_e/(1-\kappa)=394$\,d ($\Aw=A_m$),
+which contains the annual band. On a finite window the discrete iteration matrix is block lower
+triangular with spectral radius $\|\Sm\K\|<1$, so it converges formally. Its non-normal transient
+growth, of order $(\kappa\se T)^k/k!$, is fatal in practice. In a 20-year test with annual forcing
+the iterates grew by $10^{20}$ in 35 iterations.
+
+\paragraph{The Chandler-propagator variant is easy to get wrong.} Folding the solid-Earth feedback
+into the propagator, $\dot\bw=\scw^{\rm solid}\E(\bw-\bchi')$, is legitimate only with
+$\bchi'=\bq^\zeta_{\rm load}/(1-\kappa)$. Here $\bq^\zeta_{\rm load}$ excludes the tidal term
+$k^T_2\bm\psi_{21}$, although that term must still be included in the \emph{fields} $\bu,\phi$.
+Using the total $\bq$ counts the solid-Earth rotational deformation twice, because
+$\scw\E((1-\kappa)\bw-\bq^\zeta)\neq\se\E((1-\kappa)\bw-\bq^\zeta)$. Even when done correctly, the
+residual ocean gain of about $0.05/|1-\nu/\scw|$ still diverges within about 5\% of the Chandler
+period.
+
+\paragraph{Conclusion.} For this linear and causal problem, with its instantaneous response, marching
+(Scheme~1) is better in every respect. Nonlinearity does not change this, because the problem stays
+causal and Scheme~1 simply solves a nonlinear static problem at each step.
+
+\subsection{Verification checklist}
+\label{sec:checks}
+
+\begin{enumerate}
+  \item \textbf{Static limit.} For slowly varying $\zeta$, Scheme~1 tends to the static
+  \texttt{pyslfp} solution. Backward Euler with very large $\Delta t$ reproduces it to solver
+  tolerance.
+  \item \textbf{Free wobble.} With $\gamma=0$, $\zeta=0$ and $\bw_0\neq\mathbf{0}$, the motion is a
+  closed ellipse with period $2\pi/(\se\sqrt{\det(\Id-\K)})$, as tabulated in \S\ref{sec:spectral},
+  with no growth or decay. With $\gamma>0$ it decays with the chosen $Q$.
+  \item \textbf{$\K$.} $\K=\K^T$ and $\mathrm{tr}\,\E(\Id-\K)=0$ to round-off (both confirmed at
+  $l_{\max}=64$). With $C=0$, $\K=\kappa\Id$.
+  \item \textbf{Scheme~1 = Scheme~2} for the same $\Delta t$, to solver tolerance.
+  \item \textbf{Analytic cases.} The ratio of eq.~\eqref{eq:ratio} under periodic forcing, and the
+  perpendicular offset of eq.~\eqref{eq:trend} under a trend.
+  \item \textbf{Order of accuracy.} Second-order convergence in $\Delta t$.
+\end{enumerate}
+
+%=======================================================================
+\section{Extensions: where each enters}
+\label{sec:ext}
+%=======================================================================
+
+\paragraph{Relative angular momentum and torques.} These enter only through the excitation of
+eq.~\eqref{eq:chi}: replace $\bq$ by $\bchi$. At leading order this means $\bq\to\bq+\bh_\perp/(I_3-I_1)$
+and $\omega_3=-(j_3+h_3)/I_3$. This is AA24's $\bk$ with $\bk=-\bh$, which \texttt{pyslfp} already
+carries as \texttt{angular\_momentum\_change}. A torque enters as
+$\E\bGam/[\Omega(I_3-I_1)]$, rotated by $90^\circ$. The terms $\dot\bh$, and $\dot\bj$ if wanted,
+are $O(\epsilon)$ and should be added together or not at all. If they are added, the cleanest state
+variable is the equatorial angular momentum $\bl=I_1\bw+\bj+\bh$, for which eq.~\eqref{eq:eqE} is
+exactly
+\begin{equation}
+  \dot\bl=\Omega\E\,(I_3\bw-\bl)+\bGam,\qquad \bw=(\bl-\bj-\bh)/I_1 .
+  \label{eq:ell}
+\end{equation}
+Scheme~1 carries over directly, marching $\bl$ instead of $\bw$, with $\bh$ including
+$\bh_{\rm core}$ if the core is treated this way rather than through $\Aw$. The inner update
+$\bw\leftarrow(\bl-\bj-\bh)/I_1$ contracts by about $\delta\kappa\sim10^{-3}$. Retaining these
+$O(\epsilon)$ terms is only worthwhile once the larger neglected effects of \S\ref{sec:order} have
+been modelled.
+
+\paragraph{Anelasticity.} The phenomenological damping of eq.~\eqref{eq:damped} is built into the
+time step. Do not also use an observed or Chandler frequency in the propagator
+(\S\ref{sec:waveform}). The physical alternative is anelastic, frequency-dependent Love numbers.
+These give map (i) memory, which in the time domain means internal (relaxation) variables marched
+alongside $\bw_n$. They would also supply the remaining $\approx8$\,d of the Chandler period.
+Scheme~1 accommodates them, but Scheme~2 does not. Anelastic Love numbers are expected to preserve
+reciprocity, being a dissipative linear system, but this has not been checked.
+
+\paragraph{Fluid core, beyond leading order.} The treatment through $\Aw$ (\S\ref{sec:liouville})
+captures the core's main effect. A fuller treatment includes wobble-specific Love numbers and
+core--mantle coupling (Smith \& Dahlen 1981), and ocean and atmospheric transfer functions (Wahr 1982).
+
+\paragraph{Triaxiality.} The forward solver needs only eq.~\eqref{eq:components} with $I_1\neq I_2$,
+which gives a $2\times2$ ODE with different coefficients. The analogues of $\R$ and $\Sm$ follow
+from the same trapezoidal rule. Reciprocity still holds; the adjoint has the rotation reversed and $I_1$, $I_2$
+exchanged in the gyroscopic term (\S\ref{sec:adjoint}).
+
+\paragraph{Observational conventions.} See \S\ref{sec:data}. These affect the observation
+operators, not the forward solver.
+
+%=======================================================================
+\section{The generalised problem and reciprocity}
+\label{sec:recip}
+%=======================================================================
+
+This section extends AA24 \S\S2.7 and 3.2 to the dynamic problem. The aim is that the forward
+solver of \S\ref{sec:solve}, run backwards in time, is also the adjoint solver.
+
+\subsection{The generalised dynamic problem}
+\label{sec:gen}
+
+Observables other than sea level need forcings conjugate to each unknown. AA24 add three:
+\begin{itemize}
+  \item a surface force density $\bt$, paired with $\bu$;
+  \item a fictitious surface mass $\zeta_\phi$, paired with $\phi$, which sources the potential but
+  exerts no force;
+  \item a rotational forcing $\bk$, paired with $\bw$.
+\end{itemize}
+A real load is the combination $(\bu'\cdot\nabla\Phi+\phi')\sigma$. All forcings may now depend on
+time. The generalised dynamic problem is
+\begin{equation}
+  \boxed{\;\begin{aligned}
+  &A(\bu,\phi\,|\,\bu',\phi')+\int_{\pM}(\bu'\cdot\nabla\Phi+\phi')\,\sigma\dd S
+  +\int_{\pM}(\bt\cdot\bu'+\zeta_\phi\,\phi')\dd S\\
+  &\qquad+\int_M\rho\,\bu'\cdot\nabla\psi\dd V+(\It\bw+\bN\dot\bw-\bj+\bk)\cdot\bw'=0
+  \end{aligned}\;}
+  \label{eq:gen}
+\end{equation}
+with $\bw(0)=\bw_0$. Here $\sigma$, $\xi$ and $\int\sigma\dd S=0$ are as in eq.~\eqref{eq:sl}. Because
+$\zeta_\phi$ counts as mass for the potential, it also counts in the inertia (AA24 eq.~56):
+\begin{equation}
+  \bw'\cdot\bj+\int_M\rho\,\bu\cdot\nabla\psi'\dd V+\int_{\pM}(\sigma+\zeta_\phi)\,\psi'\dd S=0 .
+  \label{eq:inertiagen}
+\end{equation}
+\paragraph{The matrix $\bN$.} $\bN$ is any matrix with no axial part. This covers three cases. The
+undamped case with $A_{w,1}=A_{w,2}$ has equatorial block $(\Aw/\Omega)\E$. The triaxial case is
+eq.~\eqref{eq:N}. The phenomenological damping of eq.~\eqref{eq:damped} has equatorial block
+$(I_3-I_1)(\se\E+\gamma\Id)/(\se^2+\gamma^2)$, which reproduces $\dot\bw=(\se\E-\gamma\Id)(\bw-\bq)$.
+In every case the antisymmetric part of $\bN$ is gyroscopic and its symmetric part is dissipative.
+
+\paragraph{Correspondence with \texttt{pyslfp}.} \sloppy The code supports $\bt=\zeta_u\nabla\Phi$
+(\texttt{displacement\_load}), $\zeta_\phi$ (\texttt{gravitational\_potential\_load}) and $\bk$
+(\texttt{angular\_momentum\_change}). Their responses enter through the generalised Love numbers of
+AA24 eq.~62. The rotational row is unchanged, with $\bq=\beta\bm\phi_{21}-\bk_\perp/(I_3-I_1)$, where
+$\bm\phi_{21}$ now includes the potential sourced by $\zeta_\phi$. Scheme~1 therefore solves
+eq.~\eqref{eq:gen} with the same one-line change as before.
+
+\paragraph{Solvability.} For a spherically symmetric reference, the body force $-\rho\nabla\psi$
+exerts no net force or torque, so the condition is AA24's eq.~30 at each $t$:
+$\int_{\pM}(\bt-\zeta_\phi\nabla\Phi)\cdot(\ba+\bb\times\bx)\dd S=0$. Equivalently, the observable
+must be invariant under rigid-body motions.
+
+\subsection{The reciprocity theorem}
+\label{sec:theorem}
+
+Let $(\bu,\phi,\bw)$ solve eq.~\eqref{eq:gen} with loads $(\zeta,\bt,\zeta_\phi,\bk)$ and
+$\bw(0)=\bw_0$. Let $(\bu^\dagger,\phi^\dagger,\bw^\dagger)$ solve it with loads
+$(\zeta^\dagger,\bt^\dagger,\zeta^\dagger_\phi,\bk^\dagger)$, with $\bN$ replaced by
+\begin{equation}
+  \bN^\dagger:=-\bN^T,
+  \label{eq:Ndag}
+\end{equation}
+and with the \emph{terminal} condition $\bw^\dagger(T)=\mathbf{0}$. Four steps give the theorem.
+\begin{enumerate}
+  \item \textbf{Instantaneous identity.} Test the first problem with the dagger fields and the
+  second with the undaggered fields, and subtract. The $A$ terms cancel by symmetry, and so do the
+  $\It$ terms. Eliminating $\bj$ and $\bj^\dagger$ with eq.~\eqref{eq:inertiagen} makes the volume
+  integrals cancel, leaving at each $t$
+  \begin{equation}
+    \int_{\pM}(\bu^\dagger\!\cdot\!\nabla\Phi+\phi^\dagger+\psi^\dagger)\sigma\dd S+X
+    -\int_{\pM}(\bu\!\cdot\!\nabla\Phi+\phi+\psi)\sigma^\dagger\dd S-X^\dagger
+    =-\big(\bw^\dagger\!\cdot\bN\dot\bw-\bw\cdot\bN^\dagger\dot\bw^\dagger\big),
+    \label{eq:inst}
+  \end{equation}
+  where $X=\int_{\pM}[\bt\cdot\bu^\dagger+\zeta_\phi(\phi^\dagger+\psi^\dagger)]\dd S+\bk\cdot\bw^\dagger$,
+  and $X^\dagger$ is the same with the roles exchanged.
+  \item \textbf{Total derivative.} By eq.~\eqref{eq:Ndag},
+  $\bw\cdot\bN^\dagger\dot\bw^\dagger=-\dot\bw^\dagger\cdot\bN\bw$. The right-hand side of
+  eq.~\eqref{eq:inst} is therefore $-\frac{\dd}{\dd t}(\bw^\dagger\cdot\bN\bw)$, for any $\bN$.
+  This is why the adjoint carries $-\bN^T$. When $\bN$ is antisymmetric, $\bN^\dagger=\bN$.
+  \item \textbf{Integrate over $[0,T]$.} The boundary term is
+  $-[\bw^\dagger\cdot\bN\bw]_0^T=\bw^\dagger(0)\cdot\bN\bw_0$, since $\bw^\dagger(T)=\mathbf{0}$.
+  \item \textbf{Convert to sea level.} Use eq.~\eqref{eq:sl}. The constants $\Phi_g,\Phi_g^\dagger$
+  vanish against $\int\sigma^\dagger=\int\sigma=0$, and the ocean terms
+  $\rho_w\int C\xi\xi^\dagger$ cancel. Finally divide by $-g$.
+\end{enumerate}
+The result is
+\begin{multline}
+  \int_0^T\!\Big\{\int_{\pM}\xi^\dagger\zeta\dd S-\frac1g\int_{\pM}\big[\bt\cdot\bu^\dagger+\zeta_\phi(\phi^\dagger+\psi^\dagger)\big]\dd S-\frac1g\,\bk\cdot\bw^\dagger\Big\}\dd t\\
+  =\int_0^T\!\Big\{\int_{\pM}\xi\,\zeta^\dagger\dd S-\frac1g\int_{\pM}\big[\bt^\dagger\cdot\bu+\zeta^\dagger_\phi(\phi+\psi)\big]\dd S-\frac1g\,\bk^\dagger\cdot\bw\Big\}\dd t
+  -\frac1g\,\bw^\dagger(0)\cdot\bN\bw_0 .
+  \label{eq:recipgen}
+\end{multline}
+This is AA24's eq.~57, integrated over time, plus an initial-state term. With only direct loads and
+$\bw_0=\mathbf{0}$ it reduces to
+\begin{equation}
+  \boxed{\;\int_0^T\!\!\int_{\pM}\xi^\dagger\,\zeta\dd S\dd t=\int_0^T\!\!\int_{\pM}\xi\,\zeta^\dagger\dd S\dd t\;}
+  \label{eq:recip}
+\end{equation}
+Since $\psi=-[\bx\times(\bO\times\bx)]\cdot\bw$, the $\zeta_\phi\psi$ terms can be moved into the
+rotational forcing by replacing $\bk$ with $\bk-\int_{\pM}\zeta_\phi\,\bx\times(\bO\times\bx)\dd S$
+(AA24 eq.~58). This leaves $\zeta_\phi$ paired with $\phi$ alone.
+
+\subsection{The adjoint problem in practice}
+\label{sec:adjoint}
+
+Write $\tau=T-t$ and $\tilde\bw(\tau)=\bw^\dagger(T-\tau)$, and similarly for the other fields and
+loads. Then $\bN^\dagger\dot\bw^\dagger=-\bN^T\dot\bw^\dagger=\bN^T\dd\tilde\bw/\dd\tau$, and the
+adjoint problem becomes
+\begin{equation}
+  \text{eq.~\eqref{eq:gen} in }\tau,\ \text{with }\bN\to\bN^T,\ \text{loads }(\tilde\zeta,\tilde\bt,\tilde\zeta_\phi,\tilde\bk),\ \tilde\bw(0)=\mathbf{0}.
+  \label{eq:adjrev}
+\end{equation}
+In words: \emph{run the forward generalised solver forwards in $\tau$, on time-reversed adjoint loads,
+with $\bN$ replaced by its transpose, then reverse the output.}
+\begin{center}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+Case & $\bN^T$ in terms of $\bN$ & Adjoint solver\\
+\midrule
+$A_{w,1}=A_{w,2}$, undamped & $-\bN$ & rotation reversed ($\se\to-\se$)\\
+damped & gyroscopic part reversed, damping kept & rotation reversed, same $\gamma$\\
+triaxial & $-\bN$ with $A_{w,1}\leftrightarrow A_{w,2}$ & reversed, $A_{w,1},A_{w,2}$ swapped\\
+\bottomrule
+\end{tabular}
+\end{center}
+With damping, the adjoint is therefore as stable in $\tau$ as the forward problem is in $t$. The
+static parts ($\It$, $\K$, the Love numbers and the ocean) are self-adjoint and unchanged.
+
+\paragraph{In Scheme~1.} The step matrices $\R$ and $\Sm$ are rational functions of the matrix
+$\mathsf{L}=\se\E-\gamma\Id$. Replacing $\mathsf{L}$ by $\mathsf{L}^T$ replaces them by $\R^T$ and
+$\Sm^T$, which for $\gamma=0$ is $a\to-a$. The adjoint solver is Scheme~1 with $\R^T,\Sm^T$, run on
+reversed loads.
+
+\paragraph{Green's function.} Let $G_{\bN}(\bx_2,\bx_1;s)$ be the sea level at $\bx_2$ a time $s$ after
+a unit impulsive load at $\bx_1$. Then eq.~\eqref{eq:recip} gives
+\begin{equation}
+  G_{\bN}(\bx_2,\bx_1;s)=G_{\bN^T}(\bx_1,\bx_2;s).
+  \label{eq:green}
+\end{equation}
+Swapping source and receiver is compensated by reversing the rotation, which is Onsager--Casimir
+reciprocity. Integrating over $s$ recovers AA24's static symmetry, because the static response does
+not depend on $\bN$.
+
+\subsection{Sensitivity kernels and adjoint loads}
+\label{sec:kernels}
+
+Suppose a functional $J$ has first-order perturbation
+\begin{equation}
+  \delta J=\int_0^T\!\Big\{\int_{\pM}\zeta^\dagger\delta\xi\dd S-\frac1g\int_{\pM}\big[\bt^\dagger\cdot\delta\bu+\zeta_\phi^\dagger(\delta\phi+\delta\psi)\big]\dd S-\frac1g\,\bk^\dagger\cdot\delta\bw\Big\}\dd t .
+  \label{eq:dJ}
+\end{equation}
+Apply eq.~\eqref{eq:recipgen} with a forward problem driven by $\delta\zeta$ and $\delta\bw_0$ only. This gives
+\begin{equation}
+  \delta J=\int_0^T\!\!\int_{\pM}\xi^\dagger\,\delta\zeta\dd S\dd t+\frac1g\,\bw^\dagger(0)\cdot\bN\,\delta\bw_0 .
+  \label{eq:kernel}
+\end{equation}
+The ice kernel is $K(\bx,t)=\rho_i(1-C)\,\xi^\dagger(\bx,t)$. The second term is the kernel for the initial
+wobble, which an inversion must treat as a nuisance parameter unless the run starts from rest
+(\S\ref{sec:problem}). The adjoint loads for common observables follow AA24 \S4 and the altimetry
+row of Note~1, each multiplied by a time weight $w(t)$ ($\delta(t-t_o)$ at an instant, a boxcar for
+a monthly mean):
+\begin{center}
+\small
+\begin{tabular}{@{}lllll@{}}
+\toprule
+Observable (times $w(t)$) & $\zeta^\dagger$ & $\bt^\dagger$ & $\zeta^\dagger_\phi$ & $\bk^\dagger$\\
+\midrule
+$\xi(\bx_0)$ & $\delta(\bx,\bx_0)$ & $\mathbf{0}$ & $0$ & $\mathbf{0}$\\
+$\bn\cdot\bu(\bx_0)$ & $0$ & $-g\,\delta(\bx,\bx_0)\bn$ & $0$ & $\mathbf{0}$\\
+$\phi_{lm}$ (AA24 eq.~66) & $0$ & $\mathbf{0}$ & $-g\,Y_{lm}$ & $\int_{\pM}\zeta^\dagger_\phi\,\bx\times(\bO\times\bx)\dd S$\\
+$\int_{\pM}v\,\Delta\mathrm{SSH}^*\dd S$ & $v$ & $-g\,v\,\bn$ & $0$ & $\int_{\pM}v\,\bx\times(\bO\times\bx)\dd S$\\
+$\be_\alpha\cdot\bw$ (polar motion) & $0$ & $\mathbf{0}$ & $0$ & $-g\,\be_\alpha$\\
+\bottomrule
+\end{tabular}
+\end{center}
+In the fourth row, $v$ is the spatial averaging weight and
+$\Delta\mathrm{SSH}^*=\xi+\bn\cdot\bu+\psi/g$. This is the geocentric sea-surface height with only the
+direct centrifugal term removed (Lickley et al.\ 2018). It is a modelling convention, not the operational
+pole-tide correction. For products corrected in the standard way, eq.~\eqref{eq:dcorr} applies instead.
+The operator is then the non-rotating one, whose adjoint has $\zeta^\dagger=v$ and
+$\bt^\dagger=-gv\bn$, solved with rotational feedback switched off (\texttt{rotational\_feedbacks=False}).
+Setting $\bk^\dagger=\mathbf{0}$ in the rotating adjoint is not enough, since that retains the
+load-driven rotation that cancels from the data.
+The $\bk^\dagger$ entries in rows three and four are non-zero only for $(l,m)=(2,\pm1)$, plus $l=0$
+and $(2,0)$ if $\omega_3$ is kept.
+
+\paragraph{Causality.} If $w(t)=0$ for $t>t_o$, the adjoint fields vanish for $t>t_o$: in $\tau$ nothing
+forces them until the observation time is reached. The kernel therefore automatically ignores loads
+applied after the measurement. Before $t_o$ the kernel contains a free wobble at the Chandler
+period, decaying into the past with an e-folding time of about 40\,yr for $Q\approx100$, and not
+at all if $\gamma=0$ (\S\ref{sec:worries}).
+
+\subsection{Discrete reciprocity}
+\label{sec:discrete}
+
+The trapezoidal scheme satisfies reciprocity \emph{exactly}, with no separately derived discrete
+adjoint, provided time integrals are evaluated by pairing interval means:
+\begin{equation}
+  \int_0^T f\,g\dd t\;\to\;\sum_n\Delta t\,\bar f_{n+\frac12}\,\bar g_{n+\frac12},\qquad
+  \bar f_{n+\frac12}=\tfrac12(f_n+f_{n+1}).
+  \label{eq:pairing}
+\end{equation}
+The reason is that the trapezoidal step is exactly eq.~\eqref{eq:gen} applied to interval means,
+with $\dot\bw$ replaced by $(\bw_{n+1}-\bw_n)/\Delta t$. The instantaneous relations are linear, so
+the means satisfy them exactly. The gyroscopic terms telescope for any $\bN$:
+\begin{equation*}
+  \bar\bw^\dagger\cdot\bN(\bw_{n+1}-\bw_n)-\bar\bw\cdot\bN^\dagger(\bw^\dagger_{n+1}-\bw^\dagger_n)
+  =\bw^\dagger_{n+1}\cdot\bN\bw_{n+1}-\bw^\dagger_n\cdot\bN\bw_n .
+\end{equation*}
+This was confirmed on the reduced coupled model (the $\K$ of eq.~\eqref{eq:Knum}, a random symmetric
+non-rotating response, and the rotational coupling implied by \S\ref{sec:K}). The two sides of
+eq.~\eqref{eq:recip} agreed to $10^{-14}$, with and without damping, at every $\Delta t$. Pairing
+nodal values with trapezoidal weights instead agrees only to $O(\Delta t^2)$. In practice, define
+observables as interval means, which is natural for monthly GRACE and altimetry products. Adjoints
+from the same solver then pass dot-product tests at machine precision.
+
+\subsection{Things to be aware of}
+\label{sec:worries}
+
+\begin{enumerate}
+  \item \textbf{Untested in the full code.} Every numerical test used the reduced model built from a
+  real $\K$. Scheme~1 has not yet been implemented in \texttt{pyslfp}. Its combined ocean-plus-rotation
+  inner iteration is argued to converge but has not been demonstrated.
+  \item \textbf{Near-resonant results depend on the Chandler period.} With $\Aw=A_m$ the model gives
+  422\,d, against 425.5\,d for a complete elastic calculation and about 433\,d observed. The annual
+  prograde factor of eq.~\eqref{eq:ratio} is nevertheless $-6.4$ at 422\,d and $-5.4$ at 433\,d.
+  Annual-band rotational corrections therefore carry an uncertainty of order 20\% unless the
+  remaining anelastic lengthening is modelled. Trends are unaffected.
+  \item \textbf{Long memory.} The elastic free wobble never decays. Any excitation (a load switched
+  on, an inconsistent initial state) then persists for ever, and adjoint kernels extend over the whole
+  past at full amplitude. This is why $Q\approx100$ damping is the recommended default
+  (\S\ref{sec:timestep}). Even then the e-folding time is about $QT_{\rm CW}/\pi\approx40$\,yr, so
+  $\bw_0$ and loads before the window genuinely matter.
+  \item \textbf{Real polar motion is not load-driven.} The observed wobble is excited mainly by the
+  atmosphere and ocean, and its pole tide (a few mm) far exceeds the load-induced one. For corrected
+  data this is removed by processing (\S\ref{sec:data}). For uncorrected data it is signal the model
+  does not contain.
+\end{enumerate}
+
+%=======================================================================
+\appendix
+\section{Audit of the earlier notes}
+\label{app:audit}
+%=======================================================================
+
+\paragraph{Checked and correct.} Restatement of AA24 \S\S2--3 (including the Euler-equation
+algebra, eqs.~37--49, and the MacCullagh factors). The Liouville equation D3.2 and its equatorial
+form D3.3, re-derived and checked symbolically here. The gyroscopic matrix and its antisymmetry
+condition. The size estimates in the ordering argument. The axial result. DP1--DP2, DP5 (444\,d) and
+$k_s=0.951$, $\kappa=0.314$ (recomputed from the \texttt{pyslfp} constants). The periodic-response
+table. The magnitude of the trend offset (70.7\,d). The trapezoidal and backward-Euler matrices, $\R+2\Sm=\Id$,
+the Scheme~A contraction bound, and the 450.6\,d discrete period (450.8\,d here). The time-integrated
+reciprocity, terminal condition and time reversal. The consistency requirements 1 and 2 of the
+companion note's Method~B.
+
+\paragraph{Issues.}
+\begin{enumerate}
+  \item \label{it:methodB} \textbf{Method~B double counts the solid-Earth feedback (companion note,
+  Steps 3--4 and requirement 3).} The ``recommended'' variant pairs a no-ocean Chandler propagator with
+  an excitation read from the \emph{total} potential, which already contains $k^T_2\bm\psi_{21}$. It also
+  omits the factor $1/(1-\kappa)$. The correct pairing is given in \S\ref{sec:waveform}. Since whole-history
+  iteration is not recommended anyway, this affects no conclusion.
+  \item \label{it:jdot} \textbf{The $\dot\bj$ refinement (Note~1 \S3.3; companion \S2.7)} is
+  algebraically right and harmless, but not systematically better. It is an $O(\epsilon)$ correction to
+  the excitation (3\% monthly, 0.3\% annual), of the same order as the neglected relative angular
+  momentum of the transported meltwater, and far smaller than the fluid-core and anelastic effects.
+  Standard excitation functions omit it. The reciprocity discussion built on it (D3.11--D3.12) is then
+  unnecessary. The step-load jump it predicts ($-0.23\%$ of the static response) is real but negligible.
+  \item \textbf{The trend offset is not a lag} (Note~1 DP7 and its gloss). The offset is perpendicular
+  to the trend, a sideways displacement of the pole path, not a delay along it (\S\ref{sec:behaviour}).
+  \item \textbf{The fluid core} is treated in both notes as a later refinement, with the suggestion of
+  tuning $\se$. Its relative angular momentum is small, but its gyroscopic term is about 11\% of the
+  retained inertial term, the largest effect outside the elastic theory. It is included here through $\Aw=A_m$
+  (\S\ref{sec:liouville}), which brings the model period within 1\% of a complete elastic calculation.
+  \item \textbf{Pole-tide conventions.} Both notes treat observational conventions as a side issue,
+  and Note~1's altimetry row uses the direct-term convention $\Delta\mathrm{SSH}^*$. For data corrected
+  in the standard way, the load-driven rotation cancels from the observables (\S\ref{sec:data}).
+  \item \textbf{Damping and adjoints (Note~1, ``Physics not included'').} The statement that the adjoint
+  ``carries damping of the opposite sign'' is misleading. In reversed time the adjoint is equally
+  damped, and rotating-system reciprocity survives (\S\ref{sec:recip}).
+  \item \textbf{Triaxiality and discrete adjoints (Note~1).} Note~1 said reciprocity was not
+  established for $I_1\neq I_2$, and recommended transposing the time-step recursion to get an exact
+  discrete adjoint. Both are superseded. With $\bN^\dagger=-\bN^T$, reciprocity holds for any $\bN$
+  (\S\ref{sec:theorem}). With interval-mean pairing, the trapezoidal solver is its own exact discrete
+  adjoint (\S\ref{sec:discrete}).
+  \item \textbf{Symmetry of $\K$} was conjectured in Note~1 but not proved. It is proved in
+  \S\ref{sec:K} and confirmed numerically. The ocean lengthens $T_{\rm CW}$ from 444 to 476\,d.
+  \item \textbf{Divergence of the global iteration} (companion \S3.3). The frequency-domain
+  argument is a heuristic. On a finite window the iteration converges formally but with
+  catastrophic transient growth (\S\ref{sec:waveform}). The conclusion is unchanged.
+  \item \textbf{Scheme~B} in both notes asked for a prescribed-$\bw$ solve, which \texttt{pyslfp}
+  lacks. Eq.~\eqref{eq:basis} obtains the same basis from the existing angular-momentum forcing.
+  \item \textbf{Phase drift.} The notes quote the per-cycle period error of the trapezoidal rule but
+  not its accumulation over long runs (\S\ref{sec:timestep}).
+  \item \textbf{Sign conventions.} The companion note's eq.~B4 uses the opposite sign for $\phi$ and
+  $\psi$. Everything here follows AA24.
+  \item \textbf{Constants.} \texttt{pyslfp} uses $\Omega=2\pi/86400$\,s$^{-1}$ (solar day), not the
+  sidereal $7.2921\times10^{-5}$\,s$^{-1}$. This changes $\se$ by 0.27\% and $k_s$, $\kappa$ and $\K$ by
+0.55\%, which is small but should be corrected in the code.
+  \item \textbf{Notation.} Note~1 used $\mathbf{i}$ for the inertia perturbation, $\bGam$ for the
+  gyroscopic matrix, $\Delta\mathrm{SL}$ and $\mathcal C$. These are now $\bc$, $\bN$, $\xi$ and $C$, and
+  $\bGam$ is the external torque.
+\end{enumerate}
+
+\paragraph{Omitted as unnecessary for now.} The demonstration design of the companion note (\S4)
+and its $\dot\bj$-based refinements. Neither is wrong as a plan, and the demonstration can be revisited.
+
+\begin{thebibliography}{99}
+\bibitem{aa24} Al-Attar, D., Syvret, F., Crawford, O., Mitrovica, J.X.\ \& Lloyd, A.J., 2024.
+Reciprocity and sensitivity kernels for sea level fingerprints, \emph{Geophys.\ J.\ Int.}, 236, 362--378.
+\bibitem{barnes83} Barnes, R.T.H., Hide, R., White, A.A.\ \& Wilson, C.A., 1983. Atmospheric angular
+momentum fluctuations, length-of-day changes and polar motion, \emph{Proc.\ R.\ Soc.\ Lond.\ A}, 387, 31--73.
+\bibitem{dahlen76} Dahlen, F.A., 1976. The passive influence of the oceans upon the rotation of the
+Earth, \emph{Geophys.\ J.\ R.\ astr.\ Soc.}, 46, 363--406.
+\bibitem{desai02} Desai, S.D., 2002. Observing the pole tide with satellite altimetry, \emph{J.\ Geophys.\
+Res.}, 107(C11), 3186.
+\bibitem{desai15} Desai, S., Wahr, J.\ \& Beckley, B., 2015. Revisiting the pole tide for and from satellite
+altimetry, \emph{J.\ Geod.}, 89, 1233--1243.
+\bibitem{gross15} Gross, R.S., 2015. Earth rotation variations --- long period, in \emph{Treatise on
+Geophysics}, 2nd edn, vol.~3, ed.\ Schubert, G., Elsevier.
+\bibitem{heathcote26} Heathcote, D.A., Holland, T., Mag, A.M., Tamisiea, M.E., Coulson, S., Dangendorf, S.,
+Lloyd, A.J., Mashayek, A., Mitrovica, J.X.\ \& Al-Attar, D., 2026. A scalable Bayesian framework for modern
+sea-level inference, submitted to \emph{Geophys.\ J.\ Int.}
+\bibitem{lickley18} Lickley, M.J., Hay, C.C., Tamisiea, M.E.\ \& Mitrovica, J.X., 2018. Bias in estimates of
+global mean sea level change inferred from satellite altimetry, \emph{J.\ Climate}, 31, 5263--5271.
+\bibitem{munk} Munk, W.H.\ \& MacDonald, G.J.F., 1960. \emph{The Rotation of the Earth}, Cambridge
+University Press.
+\bibitem{note1} Working notes, September 2026. Note~1 is \texttt{rotation\_alattar\_notation.pdf};
+the companion note is \texttt{rotation\_forward\_problem.pdf}.
+\bibitem{petit10} Petit, G.\ \& Luzum, B.\ (eds), 2010. \emph{IERS Conventions (2010)}, IERS Technical Note 36,
+Verlag des Bundesamts f\"ur Kartographie und Geod\"asie, Frankfurt am Main.
+\bibitem{sd81} Smith, M.L.\ \& Dahlen, F.A., 1981. The period and Q of the Chandler wobble,
+\emph{Geophys.\ J.\ R.\ astr.\ Soc.}, 64, 223--281.
+\bibitem{wahr82} Wahr, J.M., 1982. The effects of the atmosphere and oceans on the Earth's wobble --- I.
+Theory, \emph{Geophys.\ J.\ R.\ astr.\ Soc.}, 70, 349--372.
+\end{thebibliography}
+
+\end{document}

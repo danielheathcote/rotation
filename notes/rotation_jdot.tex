@@ -1,0 +1,431 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{amsmath,amssymb,bm,mathtools}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{framed}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue]{hyperref}
+
+\newcommand{\bO}{\bm{\Omega}}
+\DeclareRobustCommand{\bw}{\bm{\omega}}
+\newcommand{\bx}{\mathbf{x}}
+\newcommand{\bu}{\mathbf{u}}
+\DeclareRobustCommand{\bj}{\mathbf{j}}
+\DeclareRobustCommand{\bc}{\mathbf{c}}
+\DeclareRobustCommand{\bh}{\mathbf{h}}
+\DeclareRobustCommand{\bk}{\mathbf{k}}
+\DeclareRobustCommand{\bl}{\bm{\ell}}
+\DeclareRobustCommand{\bq}{\mathbf{q}}
+\DeclareRobustCommand{\bT}{\mathbf{T}}
+\newcommand{\bI}{\mathbf{I}}
+\newcommand{\bGam}{\bm{\Gamma}}
+\newcommand{\be}{\hat{\mathbf{e}}}
+\newcommand{\E}{\mathsf{E}}
+\newcommand{\Id}{\mathsf{1}}
+\newcommand{\K}{\mathsf{K}}
+\newcommand{\Pm}{\mathsf{P}}
+\newcommand{\Cm}{\mathsf{C}}
+\newcommand{\Am}{\mathsf{A}}
+\newcommand{\dd}{\,\mathrm{d}}
+\newcommand{\pM}{\partial M}
+\newcommand{\se}{\sigma_{\mathrm e}}
+\newcommand{\scw}{\sigma_{\mathrm{CW}}}
+
+\title{Dynamic rotation with $\dot{\mathbf{j}}$ and $\mathbf{h}$ retained:\\
+equations and iterative forward solution for an elastic Earth with an ocean}
+\author{Working notes (prepared with Claude) --- to be checked}
+\date{2 October 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+The main note (\texttt{rotation\_dynamic\_elastic.pdf}, ``N'') drops the rate of change of the inertia
+perturbation, $\dot\bj$, from the Liouville equation. This note solves a narrower problem in which
+$\dot\bj$ is kept, together with a prescribed relative angular momentum $\bh(t)$ and external torque
+$\bGam(t)$. The Earth is elastic, the ocean is hydrostatic, and there is no fluid core and no damping.
+The inertia perturbation is written $\bj=\Am\sigma+B\bw$, so that $\dot\bj=\Am\dot\sigma+B\dot\bw$. The
+key practical point is that the whole left-hand side of the Liouville equation is the time derivative
+of the angular momentum $\bl=I_1\bw+\bj+\bh$. Stepping $\bl$ in time therefore keeps $\dot\bj$ exactly
+while never requiring $\dot\bj$, or $\dot\sigma$, to be computed. The resulting solver is the iterative
+scheme of N\S8.2 with the rotation update replaced, and $\bq$ no longer used.
+\end{abstract}
+
+\tableofcontents
+
+%=======================================================================
+\section{Scope and assumptions}
+\label{sec:scope}
+%=======================================================================
+
+The problem is the same as in N: given a direct load $\zeta(\bx,t)$, find the sea-level change $\xi$,
+displacement $\bu$, gravitational potential perturbation $\phi$ and rotation perturbation $\bw$. The
+assumptions are:
+\begin{enumerate}[label=(A\arabic*),leftmargin=3em]
+  \item \textbf{Elastic, quasi-static deformation}, with spherically symmetric Love numbers, as in N(A1).
+  \item \textbf{Hydrostatic ocean on fixed shorelines}, as in N(A2). The total load is
+  $\sigma=\zeta+\rho_wC\xi$, with mass conserved.
+  \item \textbf{Prescribed relative angular momentum $\bh(t)$ and external torque $\bGam(t)$.} Either may
+  be zero. Displacements are measured in a Tisserand frame of the solid Earth.
+  \item \textbf{No fluid core and no damping.} These are left for later.
+  \item \textbf{$I_1=I_2$}, and only the equatorial problem is solved. The axial relation is noted in
+  \S\ref{sec:liouville}.
+\end{enumerate}
+The one change of physics relative to N is that $\dot\bj$ (and $\dot\bh$) are kept. Notation follows N:
+$\bI$ is the background inertia tensor, $\bc$ its perturbation, $\bj=\bc\bO$, $\bO=\Omega\be_3$, and
+$\E=\begin{psmallmatrix}0&-1\\1&0\end{psmallmatrix}$, with $\E^2=-\Id$ and $\E^{-1}=-\E$. Where no
+confusion arises, $\bw$, $\bj$, $\bh$, $\bGam$ denote their equatorial 2-vectors.
+
+%=======================================================================
+\section{The Liouville equations}
+\label{sec:liouville}
+%=======================================================================
+
+In the Earth-fixed frame, the angular momentum $\mathbf{L}=(\bI+\bc)(\bO+\bw)+\bh$ satisfies
+$\dot{\mathbf{L}}+(\bO+\bw)\times\mathbf{L}=\bGam$. Linearising, with $\bI\bO=I_3\bO$ (N eq.~8):
+\begin{equation}
+  \frac{\dd}{\dd t}\big(\bI\bw+\bj+\bh\big)+\bO\times\big(\bI\bw+\bj+\bh\big)+\bw\times(\bI\bO)=\bGam .
+  \label{eq:L}
+\end{equation}
+For $I_1=I_2$ the equatorial components take the 2-vector form (N eq.~10)
+\begin{equation}
+  \boxed{\;I_1\dot\bw+\dot\bj+\dot\bh=\Omega\E\big[(I_3-I_1)\bw-\bj-\bh\big]+\bGam\;}
+  \label{eq:eq}
+\end{equation}
+or, equivalently, the excitation form (N eq.~11)
+\begin{equation}
+  \dot\bw=\se\E(\bw-\bm\chi),\qquad
+  \bm\chi=\frac{1}{I_3-I_1}\Big[\bj+\bh+\frac1\Omega\E\big(\bGam-\dot\bj-\dot\bh\big)\Big],\qquad
+  \se=\frac{\Omega(I_3-I_1)}{I_1}.
+\end{equation}
+Nothing is dropped in eq.~\eqref{eq:eq}: it is the exact linearisation.
+
+\paragraph{The angular-momentum form.} Define the equatorial angular-momentum perturbation and the
+``torque'' term
+\begin{equation}
+  \bl:=I_1\bw+\bj+\bh,\qquad
+  \bT:=\Omega\E\big[(I_3-I_1)\bw-\bj-\bh\big].
+  \label{eq:defs}
+\end{equation}
+The left side of eq.~\eqref{eq:eq} is exactly $\dot\bl$, so
+\begin{equation}
+  \boxed{\;\dot\bl=\bT+\bGam,\qquad \bw=\frac{\bl-\bj-\bh}{I_1}\;}
+  \label{eq:ell}
+\end{equation}
+Since $\bl=I_1\bw+\bj+\bh$, $\bT$ can also be written $\Omega\E(I_3\bw-\bl)$. That form is algebraically
+equal but numerically poor: $I_3\bw$ and $\bl$ are each about $1/\delta\approx300$ times larger than
+their difference. Always evaluate $\bT$ as in eq.~\eqref{eq:defs}.
+
+\paragraph{Static limit.} Setting $\dot\bw=\dot\bj=\dot\bh=\mathbf{0}$ and $\bGam=\mathbf{0}$ gives
+$(I_3-I_1)\bw=\bj+\bh$: AA24's static relation with $\bh=-\bk$.
+
+\paragraph{Axial component.} The third component of eq.~\eqref{eq:L} is $I_3\dot\omega_3+\dot j_3+\dot h_3=\Gamma_3$,
+i.e.\ $\ell_3:=I_3\omega_3+j_3+h_3$ satisfies $\dot\ell_3=\Gamma_3$. It has no coupling to the equatorial
+problem and, from rest with no torque, gives the algebraic $I_3\omega_3=-(j_3+h_3)$. It is not
+considered further.
+
+%=======================================================================
+\section{\texorpdfstring{The inertia perturbation: $\bj=\Am\sigma+B\bw$}{The inertia perturbation}}
+\label{sec:j}
+%=======================================================================
+
+\paragraph{From the potential.} By MacCullagh's formula (N\S6.1), the equatorial inertia perturbation
+is proportional to the degree-2, order-1 coefficients of the gravitational potential perturbation at
+radius $b$:
+\begin{equation}
+  \bj=\Omega(c_{13},c_{23})=\frac{\Omega b^3}{\sqrt{12\pi/5}\,G}\;\bm\phi_{21}=(I_3-I_1)\beta\,\bm\phi_{21},
+  \qquad \beta=\sqrt{\tfrac{5}{12\pi}}\frac{\Omega b^3}{G(I_3-I_1)} .
+  \label{eq:jphi}
+\end{equation}
+Here $\bm\phi_{21}$ is the potential of all perturbed mass, but not $\psi$ itself.
+
+\paragraph{From the loads.} For an elastic Earth, $\bm\phi_{21}$ has two sources: the total surface load
+(through AA24's load Love number $k_2$, which includes the load's own potential) and the centrifugal
+perturbation $\bm\psi_{21}=r\bw$ (through the tidal Love number $k_2^T$):
+\begin{equation}
+  \bm\phi_{21}=k_2\,\bm\sigma_{21}+k_2^T r\,\bw ,\qquad r=\sqrt{\tfrac{4\pi}{15}}\,\Omega b^2 .
+\end{equation}
+Substituting into eq.~\eqref{eq:jphi},
+\begin{equation}
+  \boxed{\;\bj=\Am\sigma+B\bw,\qquad
+  \Am\sigma:=(I_3-I_1)\beta k_2\,\bm\sigma_{21},\qquad
+  B:=(I_3-I_1)\beta r k_2^T=(I_3-I_1)\kappa\;}
+  \label{eq:jAB}
+\end{equation}
+with $\kappa=k_2^T/k_s=0.314$ (N eq.~19). $\Am$ is linear in $\sigma$ and picks out its degree-2,
+order-1 part; $B$ is a scalar. Both are constant in time because the Earth is elastic, so
+\begin{equation}
+  \dot\bj=\Am\dot\sigma+B\dot\bw .
+  \label{eq:jdot}
+\end{equation}
+Here $\sigma$ is the \emph{total} load, ocean included.
+
+\paragraph{The ocean.} $\sigma=\zeta+\rho_wC\xi$, and $\xi$ depends on $\sigma$ and on $\bw$ through the
+sea-level equation. So eq.~\eqref{eq:jAB} is exact, but $\sigma$ itself is an unknown. Eliminating it
+(by linearity) gives the reduced form
+\begin{equation}
+  \bj=\bj^\zeta+(I_3-I_1)\K\bw ,
+  \label{eq:jK}
+\end{equation}
+where $\bj^\zeta$ is the inertia perturbation from the direct load with the ocean responding and
+$\bw=\mathbf{0}$, and $\K$ is the feedback matrix of N\S6.2 (solid Earth plus ocean pole tide). Without
+an ocean, $\K=\kappa\Id$ and $\bj^\zeta=\Am\zeta$. Eq.~\eqref{eq:jK} is used for the analysis and tests
+below; the solver itself uses eq.~\eqref{eq:jAB}.
+
+\paragraph{Interpretation.} In eq.~\eqref{eq:eq}, $I_1\dot\bw+\dot\bj=(I_1+B)\dot\bw+\Am\dot\sigma$. The
+deformation raised by the wobble adds $B=(I_3-I_1)\kappa$ to the wobble's effective inertia, and
+$\Am\dot\sigma$ is the angular momentum carried by mass redistribution. Relative to $I_1$, $B$ is
+$\delta\kappa\approx1.0\times10^{-3}$.
+
+%=======================================================================
+\section{Closed equations in continuous time}
+\label{sec:continuous}
+%=======================================================================
+
+\subsection{\texorpdfstring{The $\dot\bw$ form, and iterating on $\dot\bj$}{The omega-dot form}}
+
+Substituting eq.~\eqref{eq:jdot} into eq.~\eqref{eq:eq}:
+\begin{equation}
+  I_1\dot\bw=\Omega\E\big[(I_3-I_1)\bw-\bj-\bh\big]+\bGam-\dot\bh-\Am\dot\sigma-B\dot\bw .
+  \label{eq:wdot}
+\end{equation}
+$\dot\bw$ appears on both sides, through $B\dot\bw$. It can be found by iteration: start with
+$\dot\bj^{(0)}=\mathbf{0}$, compute $\dot\bw^{(k)}$ from eq.~\eqref{eq:eq}, set
+$\dot\bj^{(k+1)}=\Am\dot\sigma+B\dot\bw^{(k)}$, and repeat. Each iteration multiplies the error by
+$B/I_1=\delta\kappa\approx1.0\times10^{-3}$, so it converges in two or three iterations. The limit is the
+closed form
+\begin{equation}
+  (I_1+B)\,\dot\bw=\Omega\E\big[(I_3-I_1)\bw-\bj-\bh\big]+\bGam-\dot\bh-\Am\dot\sigma .
+\end{equation}
+
+\paragraph{The difficulty with the ocean.} This route needs $\dot\sigma=\dot\zeta+\rho_wC\dot\xi$. $\dot\zeta$
+is prescribed, but $\dot\xi$ is the rate of change of the sea-level solution itself, which would have to
+be obtained by differentiating the solution in time. The next subsection avoids it.
+
+\subsection{\texorpdfstring{The $\bl$ form}{The l form}}
+
+Eq.~\eqref{eq:ell} contains the same physics: differentiating $\bl=I_1\bw+\bj+\bh$ and using
+eq.~\eqref{eq:jdot} reproduces eq.~\eqref{eq:wdot}. But $\dot\bj$ never appears explicitly. It is
+carried inside $\dot\bl$, and only $\bj$ itself, at a given instant, is needed to recover $\bw$ from
+$\bl$. With eq.~\eqref{eq:jAB}, that recovery is
+\begin{equation}
+  \bw=\frac{\bl-\Am\sigma-\bh}{I_1+B}
+\end{equation}
+when $\sigma$ is known. With the ocean, $\sigma$ depends on $\bw$, which is resolved by the same
+iteration as the static solver (\S\ref{sec:algorithm}).
+
+\subsection{\texorpdfstring{Free wobble with $\dot\bj$ kept}{Free wobble with j-dot kept}}
+
+With eq.~\eqref{eq:jK}, $\bj^\zeta=\bh=\bGam=\mathbf{0}$, eq.~\eqref{eq:eq} becomes
+\begin{equation}
+  \big[I_1\Id+(I_3-I_1)\K\big]\dot\bw=\Omega(I_3-I_1)\,\E(\Id-\K)\bw .
+\end{equation}
+The matrix in square brackets is the effective inertia. It and $\Id-\K$ share the eigenvectors of $\K$,
+so the same argument as in N\S6.3 gives a purely oscillatory free motion with
+\begin{equation}
+  \scw'=\Omega(I_3-I_1)\sqrt{\frac{\det(\Id-\K)}{\det[I_1\Id+(I_3-I_1)\K]}}
+  \;\xrightarrow{\ \K=\kappa\Id\ }\;\frac{\Omega(I_3-I_1-B)}{I_1+B}.
+\end{equation}
+Keeping $\dot\bj$ lengthens the Chandler period by about half a day (\S\ref{sec:tests}).
+
+%=======================================================================
+\section{Time discretisation}
+\label{sec:time}
+%=======================================================================
+
+\subsection{The step}
+
+Integrate eq.~\eqref{eq:ell} from $t_n$ to $t_{n+1}=t_n+\Delta t$. The left side integrates
+\emph{exactly}:
+\begin{equation}
+  \bl_{n+1}-\bl_n=\int_{t_n}^{t_{n+1}}(\bT+\bGam)\dd t .
+\end{equation}
+Only the right side is approximated, by the trapezoidal rule. With $s:=\Delta t/2$:
+\begin{equation}
+  \bl_{n+1}=\bl_n+s\big(\bT_n+\bT_{n+1}\big)+s\big(\bGam_n+\bGam_{n+1}\big).
+  \label{eq:trap}
+\end{equation}
+This is the point of the $\bl$ form: the $\dot\bj$ term of eq.~\eqref{eq:eq} becomes exactly
+$\bj_{n+1}-\bj_n$. So $\dot\bj$ is kept in full, but neither $\dot\bj$ nor $\dot\sigma$ is ever computed.
+
+\paragraph{Solving for $\bw_{n+1}$.} Substitute $\bl_{n+1}=I_1\bw_{n+1}+\bj_{n+1}+\bh_{n+1}$ and
+$\bT_{n+1}=\Omega\E[(I_3-I_1)\bw_{n+1}-\bj_{n+1}-\bh_{n+1}]$ into eq.~\eqref{eq:trap}, and collect the
+$\bw_{n+1}$ terms on the left:
+\begin{equation}
+  \boxed{\;\Pm\,\bw_{n+1}=\mathbf{b}_n-\Cm\,\bj_{n+1},\qquad
+  \Pm:=I_1\Id-s\Omega(I_3-I_1)\E,\quad \Cm:=\Id+s\Omega\E,\;}
+  \label{eq:step}
+\end{equation}
+with the known right-hand side
+\begin{equation}
+  \mathbf{b}_n:=\bl_n+s\bT_n+s\big(\bGam_n+\bGam_{n+1}\big)-\Cm\,\bh_{n+1}.
+\end{equation}
+$\Pm$ is invertible, since $\Pm^{-1}=[I_1\Id+s\Omega(I_3-I_1)\E]/[I_1^2+s^2\Omega^2(I_3-I_1)^2]$. Only
+$\bh$ at the time levels is needed, not $\dot\bh$.
+
+\paragraph{Coupling through $\bj_{n+1}$.} $\bj_{n+1}$ depends on $\bw_{n+1}$, both directly
+($B\bw_{n+1}$) and through the ocean's response to $\psi$. Eq.~\eqref{eq:step} is therefore solved
+iteratively, inside the sea-level loop (\S\ref{sec:algorithm}). With eq.~\eqref{eq:jK}, the rotational
+part of that iteration is $\bw\mapsto\Pm^{-1}[\mathbf{b}_n-\Cm\bj^\zeta_{n+1}-(I_3-I_1)\Cm\K\bw]$. Its
+contraction factor, computed for the present-day $\K$, is
+\begin{center}
+\small
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+$\Delta t$ & 1\,d & 7\,d & 30.4\,d & 100\,d & 365\,d & $\to\infty$\\
+\midrule
+no ocean ($\K=\kappa\Id$) & 0.0034 & 0.023 & 0.094 & 0.23 & 0.30 & 0.31\\
+present-day ocean & 0.0039 & 0.026 & 0.11 & 0.26 & 0.35 & 0.36\\
+\bottomrule
+\end{tabular}
+\end{center}
+For short steps it is about $\delta\kappa\,s\Omega$; for long steps it tends to the static solver's
+value $\approx\kappa$. In a test with weekly steps, the iteration reached a relative change of $10^{-15}$
+in about 10 iterations, and agreed with a direct $2\times2$ solve to $10^{-14}$.
+
+\subsection{Why the trapezoidal rule}
+
+Stepping with the current derivative only (explicit Euler, ``$\bw_{n+1}=\bw_n+\Delta t\,\dot\bw_n$'')
+would amplify the free wobble at every step, by $\sqrt{1+(\scw\Delta t)^2}$. That is a factor of $1.36$
+per Chandler period with weekly steps and $3.5$ with monthly steps. The trapezoidal rule preserves
+the wobble's amplitude (N\S8.1), with a period error of order $(\scw\Delta t)^2/12$. In discrete form it
+also conserves angular momentum exactly: eq.~\eqref{eq:trap} holds to rounding (checked to
+$2\times10^{-16}$).
+
+%=======================================================================
+\section{The iterative algorithm}
+\label{sec:algorithm}
+%=======================================================================
+
+This is N\S8.2 (Scheme~1) with the rotation update replaced. $\bq$ is not used. At each step, given
+$\bl_n$, $\bT_n$, $\bw_n$, the direct load $\zeta_{n+1}$, and the prescribed $\bh_{n+1}$, $\bGam_n$,
+$\bGam_{n+1}$:
+\begin{center}
+\fbox{\begin{minipage}{0.93\linewidth}
+\begin{enumerate}
+  \item Form $\mathbf{b}_n=\bl_n+s\bT_n+s(\bGam_n+\bGam_{n+1})-\Cm\bh_{n+1}$. Initialise $\bw^{(0)}=\bw_n$ and the
+  load $\sigma^{(0)}$ (warm start from $\sigma_n$).
+  \item For $k=0,1,\dots$ until the load converges:
+  \begin{enumerate}
+    \item $\bm\psi_{21}=r\bw^{(k)}$;
+    \item $u_{lm}=h_l\sigma^{(k)}_{lm}$ and $\phi_{lm}=k_l\sigma^{(k)}_{lm}$, adding $h^T_2\bm\psi_{21}$ and
+    $k^T_2\bm\psi_{21}$ at $(2,1)$;
+    \item $\bj^{(k)}=(I_3-I_1)\beta\,\bm\phi_{21}$, eq.~\eqref{eq:jphi}, with $\phi$ excluding $\psi$;
+    \item \textbf{rotation update:} $\bw^{(k+1)}=\Pm^{-1}\big(\mathbf{b}_n-\Cm\bj^{(k)}\big)$, eq.~\eqref{eq:step};
+    \item add $r\bw^{(k+1)}$ to $\bm\phi_{21}$, form $\xi$ (N eq.~4), and set
+    $\sigma^{(k+1)}=\zeta_{n+1}+\rho_wC\xi$, with mass conserved.
+  \end{enumerate}
+  \item Store $\bw_{n+1}=\bw^{(k+1)}$, $\bj_{n+1}=\bj^{(k)}$,
+  $\bl_{n+1}=I_1\bw_{n+1}+\bj_{n+1}+\bh_{n+1}$ and
+  $\bT_{n+1}=\Omega\E[(I_3-I_1)\bw_{n+1}-\bj_{n+1}-\bh_{n+1}]$.
+\end{enumerate}
+\end{minipage}}
+\end{center}
+
+\paragraph{In \texttt{pyslfp}.} \sloppy This is a copy of \texttt{solve\_generalised\_equation} with the rotation
+update replaced. With \texttt{i} $=\beta$ (\texttt{inertia\_factor}), \texttt{dI} $=I_3-I_1$
+(\texttt{polar\_moment\_of\_inertia} $-$ \texttt{equatorial\_moment\_of\_inertia}), and
+\texttt{P}, \texttt{C}, \texttt{b\_n} built from the formulas above:
+\begin{verbatim}
+    j = dI * i * potential_change_lm.coeffs[:, 2, 1]
+    angular_velocity_change = np.linalg.solve(P, b_n - C @ j)
+\end{verbatim}
+The \texttt{angular\_momentum\_change} argument is not used: $\bh$ enters through $\mathbf{b}_n$.
+\texttt{pyslfp} is non-dimensional, so $\Delta t$, $\bh$ and $\bGam$ must be expressed in its units
+(\texttt{time\_scale} etc.). As noted in N\S6.2, the sidereal $\Omega$ should be used.
+
+\paragraph{Convergence.} The rotational part contracts as in the table of \S\ref{sec:time}. The
+ocean-load part is unchanged from the static solver, which dominates the iteration count.
+
+%=======================================================================
+\section{Initial conditions}
+\label{sec:ic}
+%=======================================================================
+
+\begin{itemize}
+  \item \textbf{From rest:} $\zeta(0)=0$, $\bh_0=\mathbf{0}$, $\bw_0=\mathbf{0}$, so $\bj_0=\mathbf{0}$,
+  $\bl_0=\mathbf{0}$, $\bT_0=\mathbf{0}$.
+  \item \sloppy\textbf{From equilibrium} with a pre-existing load $\zeta_0$ and $\bh_0$: run the static solver with
+  \texttt{angular\_momentum\_change} $=-\bh_0$ (AA24's $\bk=-\bh$). This gives $\bw_0$ and $\bj_0$; then
+  $\bl_0=I_1\bw_0+\bj_0+\bh_0$, and $\bT_0=\mathbf{0}$ because the state is static.
+  \item \textbf{Prescribed free wobble:} choose $\bw_0$, compute $\bj_0$ from a solve with $\bw$ held at
+  $\bw_0$, then $\bl_0$ and $\bT_0$ as above.
+\end{itemize}
+A load that is switched on between two time steps needs no special treatment: $\bl$ is continuous, and
+the scheme produces the jump in $\bw$ described in \S\ref{sec:tests}.
+
+%=======================================================================
+\section{Test cases}
+\label{sec:tests}
+%=======================================================================
+
+All numbers below were checked with the reduced model eq.~\eqref{eq:jK}, using the \texttt{pyslfp}
+constants and the present-day $\K$ of N eq.~21, against a direct implementation of the step.
+
+\paragraph{1. Free wobble period.} From \S\ref{sec:continuous}:
+\begin{center}
+\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+& $\dot\bj$ dropped (N) & $\dot\bj$ kept & difference\\
+\midrule
+no ocean & 444.02\,d & 444.48\,d & $+0.46$\,d\\
+present-day ocean & 476.03\,d & 476.60\,d & $+0.56$\,d\\
+\bottomrule
+\end{tabular}
+\end{center}
+A simulation with 1-day steps reproduced the ocean value to 0.01\,d.
+
+\paragraph{2. Step load.} If $\bj^\zeta$ jumps by $\Delta\bj^\zeta$, continuity of $\bl$ gives an instantaneous
+$\Delta\bw=-[I_1\Id+(I_3-I_1)\K]^{-1}\Delta\bj^\zeta$, after which $\bw$ circles the new static answer. For
+$\K=\kappa\Id$ the jump is $-(I_3-I_1)(1-\kappa)/(I_1+B)=-0.225\%$ of the eventual static response, in the
+opposite direction. The scheme reproduced this to seven significant figures.
+
+\paragraph{3. Periodic forcing.} For $\K=\kappa\Id$ and $\bj^\zeta\propto e^{i\nu t}$ (complex notation),
+eq.~\eqref{eq:eq} gives
+\begin{equation}
+  \frac{m_{\rm dynamic}}{m_{\rm static}}=\frac{1+\nu/\Omega}{1-\nu/\scw'} ,
+\end{equation}
+compared with $1/(1-\nu/\scw)$ when $\dot\bj$ is dropped. The extra numerator is the $\Am\dot\sigma$ term.
+\begin{center}
+\small
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+& \multicolumn{3}{c}{prograde} & \multicolumn{3}{c}{retrograde}\\
+Forcing period & 30\,d & 182.6\,d & 365.25\,d & 30\,d & 182.6\,d & 365.25\,d\\
+\midrule
+$\dot\bj$ kept & $-0.0748$ & $-0.701$ & $-4.623$ & $0.0611$ & $0.290$ & $0.450$\\
+$\dot\bj$ dropped & $-0.0725$ & $-0.699$ & $-4.637$ & $0.0633$ & $0.291$ & $0.451$\\
+\bottomrule
+\end{tabular}
+\end{center}
+(no ocean). The forced responses differ by about $\nu/\Omega$: 3\% at monthly periods and 0.3\% at annual.
+Simulations reproduced the formula to $10^{-3}$ at 30\,d and $5\times10^{-5}$ at one year.
+
+\paragraph{4. Long runs.} The bigger practical difference is the free-wobble period. In a 20-year run
+with weekly steps, annual forcing and the present-day ocean, the two schemes differed by up to 6\% of
+the response. This is mostly the slow drift in phase of the free wobble caused by the $0.56$\,d period
+difference, not the forced response.
+
+\paragraph{5. Angular-momentum budget.} Eq.~\eqref{eq:trap} holds to rounding ($2\times10^{-16}$ relative)
+with non-zero $\bh$ and $\bGam$.
+
+\paragraph{6. Static limit.} For slowly varying loads, $\bw\to(I_3-I_1)^{-1}(\bj+\bh)$, i.e.\ the static
+\texttt{pyslfp} solution with \texttt{angular\_momentum\_change} $=-\bh$.
+
+%=======================================================================
+\section{Next steps}
+\label{sec:next}
+%=======================================================================
+
+\begin{itemize}
+  \item \textbf{Fluid core:} add $\bh_{\rm core}\approx(A_f/\Omega)\E\dot\bw$ to $\bh$ (N\S4.1). In the $\bl$
+  form this replaces $I_1$ by $A_m$ in $\bl$ and in $\Pm$.
+  \item \textbf{Damping:} add a dissipative term, as in N\S8.1, written for the $\bl$ form.
+  \item \textbf{Generalised and adjoint problems:} the $\bl$ form keeps the structure of N\S10. The
+  adjoint is the same solver run backwards in time with the rotation reversed.
+\end{itemize}
+
+\end{document}
