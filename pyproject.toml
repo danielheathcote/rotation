@@ -1,0 +1,22 @@
+[project]
+name = "rotation"
+version = "0.1.0"
+description = "Dynamic rotational feedbacks in the elastic sea-level problem"
+authors = [
+    {name = "Dan", email = "d.a.heathcote@gmail.com"}
+]
+requires-python = ">=3.12,<4.0"
+dependencies = [
+    "pyslfp (>=2.2.0,<3.0.0)",
+    "numpy",
+    "matplotlib",
+    "ipykernel (>=7.3.0,<8.0.0)",
+    "nbconvert",
+]
+
+[tool.poetry]
+package-mode = false
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

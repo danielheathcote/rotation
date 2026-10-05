@@ -12,3 +12,10 @@ __pycache__/
 
 # Verification scratch scripts
 scratch/
+
+# Local reference copy of pyslfp (the code uses pip pyslfp)
+pyslfp/
+
+# Environments and notebooks
+.venv/
+.ipynb_checkpoints/
