@@ -19,3 +19,10 @@ pyslfp/
 # Environments and notebooks
 .venv/
 .ipynb_checkpoints/
+
+# Notes kept out of the repository for now
+new-notes/
+notes/rotation_wdot.*
+
+# Animation output
+*.gif
