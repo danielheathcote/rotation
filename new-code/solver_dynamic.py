@@ -9,8 +9,9 @@ Implements:
   - Initial conditions and time integration.
 
 Assumptions: Elastic Earth, hydrostatic ocean on fixed shorelines, prescribed relative angular
-momentum h(t) and torque Gamma(t), no fluid core, no damping, I1 = I2. Only the
-equatorial rotation is solved for.
+momentum h(t) and torque Gamma(t), I1 = I2. Only the equatorial rotation is solved for.
+The fluid core is included to leading order, through the mantle's moment A_m in the
+wobble term, and damping is optional, set by the quality factor Q of the free wobble.
 
 All quantities, including time, are in pyslfp's non-dimensional units.
 E = [[0, -1], [1, 0]] rotates equatorial 2-vectors by +90 degrees.
@@ -26,6 +27,13 @@ from pyslfp.ice import IceNG
 
 # Sidereal rotation rate (rad/s). pyslfp's default is the solar-day value.
 SIDEREAL_ROTATION_FREQUENCY = 7.2921150e-5
+
+# Equatorial moment of PREM's fluid outer core as a fraction of I1, A_f / I1
+# (from integrating PREM's outer-core density; not provided by pyslfp)
+OUTER_CORE_FRACTION = 0.1132
+
+# Default quality factor of the free wobble (the observed Chandler wobble has Q of about 100)
+DEFAULT_QUALITY_FACTOR = 100.0
 
 E = np.array([[0.0, -1.0], [1.0, 0.0]])
 ZERO_2 = np.zeros(2)
@@ -63,18 +71,21 @@ def make_state(lmax, /, *, rotation_frequency=SIDEREAL_ROTATION_FREQUENCY):
     return EarthState(ice_thickness, sea_level, model)
 
 
-def rotation_constants(model):
+def rotation_constants(model, /, *, core_fraction=OUTER_CORE_FRACTION):
     """
     Collects the various required constants.
 
     Args:
         model: The pyslfp EarthModel.
+        core_fraction: A_f / I1, the fluid core's share of the equatorial moment.
+            Setting it to zero gives an Earth without a fluid core.
 
     Returns:
-        Dict with the moments of inertia (i1, i3, di = I3 - I1), Omega (omega),
-        the constants r and beta, the load Love numbers (h_l, k_l,
-        shaped to act on coefficient arrays), the degree-2 tidal Love numbers
-        (ht2, kt2), g, water_density, and the time and length scales.
+        Dict with the moments of inertia (i1, i3, di = I3 - I1), the wobble
+        inertia a_w = I1 - A_f (the mantle moment A_m), Omega (omega), the
+        constants r and beta, kappa = beta r k2T, the load Love numbers (h_l,
+        k_l, shaped to act on coefficient arrays), the degree-2 tidal Love
+        numbers (ht2, kt2), g, water_density, and the time and length scales.
     """
     parameters = model.parameters
     love_numbers = model.love_numbers
@@ -85,9 +96,11 @@ def rotation_constants(model):
         "i1": i1,
         "i3": i3,
         "di": i3 - i1,
+        "a_w": i1 * (1.0 - core_fraction),
         "omega": parameters.rotation_frequency,
         "r": parameters.rotation_factor,
         "beta": parameters.inertia_factor,
+        "kappa": parameters.inertia_factor * parameters.rotation_factor * love_numbers.k_t[2],
         "h_l": love_numbers.h[None, :, None],
         "k_l": love_numbers.k[None, :, None],
         "ht2": love_numbers.h_t[2],
@@ -498,14 +511,42 @@ def solve_instantaneous(
 # The forward right-hand side omega_dot = f(omega, t)
 #=======================================================================
 
+def damping_constant(constants, quality_factor):
+    """
+    The damping constant gamma that gives the free wobble a quality factor Q.
+    N.B. eps = epsilon.
+    The free wobble has complex frequency sigma'(1 + i eps) / (1 + eps^2), so
+    Q = (1 + eps^2) / (2 eps), i.e. eps = Q - sqrt(Q^2 - 1), and
+    gamma = eps (A_w + (I3 - I1) kappa) / Omega. This is exact without an ocean;
+    with the ocean the resulting Q differs from the target by about 1e-4.
+
+    Args:
+        constants: Dict from rotation_constants.
+        quality_factor: The target Q, or None for no damping.
+
+    Returns:
+        gamma (zero if quality_factor is None).
+    """
+    if quality_factor is None:
+        return 0.0
+    assert quality_factor > 1, f"The quality factor must exceed 1, not {quality_factor}"
+    eps = quality_factor - np.sqrt(quality_factor**2 - 1)
+    return eps * (constants["a_w"] + constants["di"] * constants["kappa"]) / constants["omega"]
+
+
+def wobble_matrix(constants, damping):
+    """W = A_w 1 - Omega gamma E, the matrix multiplying omega_dot in step 3."""
+    return constants["a_w"] * np.eye(2) - constants["omega"] * damping * E
+
+
 def rotation_term(constants, omega, j, h):
     """Step 2: T = Omega E [(I3 - I1) omega - j - h]."""
     return constants["omega"] * E @ (constants["di"] * omega - j - h)
 
 
-def rotation_rate(constants, rotation_term, gamma, h_dot, j_dot):
-    """Step 3 (initial and part b): omega_dot = (T + Gamma - h_dot - j_dot) / I1."""
-    return (rotation_term + gamma - h_dot - j_dot) / constants["i1"]
+def rotation_rate(wobble, rotation_term, torque, h_dot, j_dot):
+    """Step 3 (initial and part b): omega_dot = W^-1 (T + Gamma - h_dot - j_dot)."""
+    return np.linalg.solve(wobble, rotation_term + torque - h_dot - j_dot)
 
 
 def forward_rhs(
@@ -516,6 +557,7 @@ def forward_rhs(
     *,
     angular_momentum=None,
     torque=None,
+    quality_factor=DEFAULT_QUALITY_FACTOR,
     ocean=True,
     rtol=1e-10,
     inner_rtol=1e-12,
@@ -523,7 +565,8 @@ def forward_rhs(
 ):
     """
     Builds the forward right-hand side f(t, omega), for use with
-    any time integrator.
+    any time integrator. The fluid core enters through the wobble inertia
+    constants["a_w"], and damping through quality_factor.
 
     Args:
         state: The background EarthState.
@@ -532,6 +575,7 @@ def forward_rhs(
         angular_momentum: Relative angular momentum h, a VectorForcing (value and
             rate give h and h_dot), or None for zero.
         torque: External torque Gamma, a VectorForcing, or None for zero.
+        quality_factor: Quality factor Q of the free wobble, or None for no damping.
         ocean: If False, there is no ocean.
         rtol: Tolerance of each instantaneous solve.
         inner_rtol: Relative tolerance on the change in omega_dot (step 3).
@@ -539,8 +583,12 @@ def forward_rhs(
 
     Returns:
         The function f(t, omega) -> omega_dot. Its attribute inner_iterations
-        records the number of step-3 iterations of each call.
+        records the number of step-3 iterations of each call, and damping holds gamma.
     """
+    # W = A_w 1 - Omega gamma E, with the core in A_w and the damping in gamma
+    damping = damping_constant(constants, quality_factor)
+    wobble = wobble_matrix(constants, damping)
+
     # Warm starts, kept separately for the solve with zeta and the solve with zeta_dot
     warm_start = {"value": None, "rate": None}
 
@@ -548,7 +596,7 @@ def forward_rhs(
         omega = np.asarray(omega, dtype=float)
         h = ZERO_2 if angular_momentum is None else angular_momentum.value(t)
         h_dot = ZERO_2 if angular_momentum is None else angular_momentum.rate(t)
-        gamma = ZERO_2 if torque is None else torque.value(t)
+        torque_value = ZERO_2 if torque is None else torque.value(t)
 
         # --- 1. j = J(zeta(t), omega) ---
         solve = solve_instantaneous(
@@ -568,9 +616,9 @@ def forward_rhs(
         torque_term = rotation_term(constants, omega, j, h)
 
         # --- 3. Iterate on omega_dot, starting from j_dot^(0) = 0 ---
-        # omega_dot^(0) = (T + Gamma - h_dot) / I1
+        # omega_dot^(0) = W^-1 (T + Gamma - h_dot)
         zeta_dot = load.rate(t)
-        omega_dot = rotation_rate(constants, torque_term, gamma, h_dot, ZERO_2)
+        omega_dot = rotation_rate(wobble, torque_term, torque_value, h_dot, ZERO_2)
         converged = False
         for count in range(1, max_inner_iterations + 1):
 
@@ -587,8 +635,8 @@ def forward_rhs(
             if ocean:
                 warm_start["rate"] = rate_solve["sea_level"].data
 
-            # (b) omega_dot^(k+1) = (T + Gamma - h_dot - j_dot^(k+1)) / I1
-            omega_dot_new = rotation_rate(constants, torque_term, gamma, h_dot, rate_solve["j"])
+            # (b) omega_dot^(k+1) = W^-1 (T + Gamma - h_dot - j_dot^(k+1))
+            omega_dot_new = rotation_rate(wobble, torque_term, torque_value, h_dot, rate_solve["j"])
             change = np.max(np.abs(omega_dot_new - omega_dot))
             omega_dot = omega_dot_new
             if change <= inner_rtol * np.max(np.abs(omega_dot)):
@@ -602,6 +650,7 @@ def forward_rhs(
         return omega_dot
 
     rhs.inner_iterations = []
+    rhs.damping = damping
     return rhs
 
 

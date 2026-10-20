@@ -28,15 +28,16 @@ def wobble_period_days(t_days, omega):
 def fit_forced_response(t_days, omega, nu_per_day, sigma_per_day):
     """
     Least-squares fit of m = omega_1 + i omega_2 by
-    c_1 e^{i nu t} + c_2 e^{-i nu t} + c_3 e^{i sigma t} + c_4 e^{-i sigma t},
+    c_1 e^{i nu t} + c_2 e^{-i nu t} + c_3 e^{i sigma t} + c_4 e^{-i sigma* t},
     separating the forced (nu) and free (sigma) parts. The negative-frequency
-    terms allow for elliptical motion.
+    terms allow for elliptical motion. A damped free wobble has a complex
+    sigma, whose positive imaginary part makes both free terms decay.
 
     Args:
         t_days: Times in days.
         omega: Equatorial rotation, shape (len(t_days), 2).
         nu_per_day: Forcing frequency (rad/day), positive.
-        sigma_per_day: Free-wobble frequency (rad/day).
+        sigma_per_day: Free-wobble frequency (rad/day), real or complex.
 
     Returns:
         The four complex coefficients (c_1, c_2, c_3, c_4).
@@ -47,7 +48,7 @@ def fit_forced_response(t_days, omega, nu_per_day, sigma_per_day):
             np.exp(1j * nu_per_day * t_days),
             np.exp(-1j * nu_per_day * t_days),
             np.exp(1j * sigma_per_day * t_days),
-            np.exp(-1j * sigma_per_day * t_days),
+            np.exp(-1j * np.conj(sigma_per_day) * t_days),
         ],
         axis=1,
     )
@@ -210,3 +211,22 @@ def sea_level_animation(state, sea_levels_mm, titles, pole_mas, t_days, *, frame
     animation = FuncAnimation(fig, update, frames=len(t_days), interval=1000 / frames_per_second, blit=False)
     plt.close(fig)
     return animation
+
+
+def wobble_quality_factor(t_days, omega, period_days):
+    """
+    Quality factor Q of a decaying free wobble, from a least-squares fit of
+    log|omega| against time: |omega| ~ exp(-t / tau), so Q = (2 pi / T) tau / 2.
+
+    Args:
+        t_days: Times in days.
+        omega: Equatorial rotation, shape (len(t_days), 2).
+        period_days: The wobble period T in days.
+
+    Returns:
+        Q (infinite if the amplitude does not decay).
+    """
+    slope = np.polyfit(t_days, np.log(np.linalg.norm(omega, axis=1)), 1)[0]
+    if slope >= 0:
+        return np.inf
+    return (2 * np.pi / period_days) / (2 * abs(slope))
