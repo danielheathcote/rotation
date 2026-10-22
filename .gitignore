@@ -26,3 +26,6 @@ notes/rotation_wdot.*
 
 # Animation output
 *.gif
+
+# Downloaded data (reproduce with the download helpers)
+data/

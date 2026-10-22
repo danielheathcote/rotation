@@ -12,6 +12,9 @@ dependencies = [
     "matplotlib",
     "ipykernel (>=7.3.0,<8.0.0)",
     "nbconvert",
+    "earthaccess (>=0.19.0,<0.20.0)",
+    "netcdf4 (>=1.7.5,<2.0.0)",
+    "xarray (>=2026.9.0,<2027.0.0)",
 ]
 
 [tool.poetry]
