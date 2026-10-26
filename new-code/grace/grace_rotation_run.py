@@ -8,12 +8,18 @@ through the monthly values, which bridges the missing months, and zeta_dot is th
 spline's derivative. The
 run starts in equilibrium with the load of the first month.
 
-Needs the cached mascon coefficients (python new-code/download_grace_data.py)
+Needs the cached mascon coefficients (python new-code/grace/download_grace_data.py)
 and, for the ocean forcings, the direct ocean load at the same degree
-(python new-code/grace_direct_ocean.py --lmax <lmax>).
+(python new-code/grace/grace_direct_ocean.py --lmax <lmax>).
 Run from the repository root, e.g.
-    python new-code/grace_rotation_run.py --forcing land-ocean --lmax 64
+    python new-code/grace/grace_rotation_run.py --forcing land-ocean --lmax 64
 """
+
+import sys
+from pathlib import Path
+
+# solver_dynamic lives one directory up, in new-code/
+sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 import argparse
 import json
@@ -31,7 +37,7 @@ import grace_data_helper as gh
 parser = argparse.ArgumentParser(description="Dynamic and static rotation driven by GRACE loads.")
 parser.add_argument(
     "--forcing",
-    choices=["land", "land-ocean", "land-ocean-nogad"],
+    choices=gh.FORCINGS,
     default="land-ocean",
     help="direct load: L, L + D, or L + D without GAD (default land-ocean)",
 )
@@ -51,9 +57,8 @@ quality_factor = None if args.quality_factor.lower() == "none" else float(args.q
 rtol = 1e-10
 
 if args.output is None:
-    output_dir = gh.DEFAULT_DATA_DIR / "runs"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / f"rotation_{args.forcing}_lmax{lmax}_Q{args.quality_factor}.npz"
+    output_path = gh.run_path(args.forcing, lmax, args.quality_factor)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 else:
     output_path = args.output
 
@@ -65,19 +70,7 @@ state = sd.make_state(lmax)
 model = state.model
 constants = sd.rotation_constants(model)
 
-mascons = gh.load_mascon_coefficients(gh.DEFAULT_DATA_DIR / "jpl_mascons_lmax90.npz")
-time_days = mascons["time_days"]
-assert mascons["land_coeffs"].shape[2] > lmax, (
-    f"The mascon cache only reaches degree {mascons['land_coeffs'].shape[2] - 1}; rerun download_grace_data.py with a higher lmax"
-)
-direct_load_coeffs = mascons["land_coeffs"][:, :, : lmax + 1, : lmax + 1]
-
-# --- Add the direct ocean load ---
-if args.forcing != "land":
-    direct_ocean = gh.load_direct_ocean_coefficients(gh.DEFAULT_DATA_DIR / f"jpl_direct_ocean_lmax{lmax}.npz")
-    assert np.allclose(direct_ocean["time_days"], time_days), "The direct ocean load and the mascons have different months"
-    key = "direct_ocean_coeffs" if args.forcing == "land-ocean" else "direct_ocean_nogad_coeffs"
-    direct_load_coeffs = direct_load_coeffs + direct_ocean[key]
+time_days, dates, direct_load_coeffs = gh.direct_load_coefficients(args.forcing, lmax)
 
 load = gh.CoefficientLoad(
     model,
@@ -108,7 +101,7 @@ t = sd.days_to_model_time(t_days, constants)
 month_t = t[month_index]
 
 print(f"lmax = {lmax}, forcing {args.forcing}, Q = {args.quality_factor}")
-print(f"{n_months} months, {len(t) - 1} steps, from {mascons['dates'][0]} to {mascons['dates'][n_months - 1]}")
+print(f"{n_months} months, {len(t) - 1} steps, from {dates[0]} to {dates[n_months - 1]}")
 
 #=======================================================================
 # Static rotation: in equilibrium with the load at each month
@@ -145,7 +138,7 @@ for n in range(n_months - 1):
     omega[steps] = sd.integrate(f, omega[month_index[n]], t[steps])
     if (n + 1) % 12 == 0 or n == n_months - 2:
         pole_mas = sd.omega_to_mas(omega[month_index[n + 1]], constants)
-        print(f"  {mascons['dates'][n + 1]}: pole ({pole_mas[0]:7.2f}, {pole_mas[1]:7.2f}) mas, "
+        print(f"  {dates[n + 1]}: pole ({pole_mas[0]:7.2f}, {pole_mas[1]:7.2f}) mas, "
               f"{time.time() - start_time:6.0f} s")
 print(f"Dynamic rotation took {time.time() - start_time:.1f} s; "
       f"mean inner iterations {np.mean(f.inner_iterations):.2f}")
@@ -171,7 +164,7 @@ np.savez_compressed(
     omega=omega,
     pole_mas=sd.omega_to_mas(omega, constants),
     month_days=month_days,
-    dates=mascons["dates"][:n_months].astype(str),
+    dates=dates[:n_months].astype(str),
     dynamic_omega=dynamic_omega,
     static_omega=static_omega,
     dynamic_j=dynamic_j,

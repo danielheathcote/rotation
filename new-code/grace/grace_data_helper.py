@@ -36,7 +36,7 @@ import solver_dynamic as sd
 JPL_MASCON_SHORT_NAME = "TELLUS_GRAC-GRFO_MASCON_CRI_GRID_RL06.3_V4"
 
 # Default data directory: <repository>/data/grace
-DEFAULT_DATA_DIR = Path(__file__).resolve().parents[1] / "data" / "grace"
+DEFAULT_DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "grace"
 
 # 1 cm of water is 10 kg/m^2
 KG_PER_M2_PER_CM = 10.0
@@ -285,15 +285,31 @@ def load_from_coefficients(model, coeffs, /, *, normalization=CACHE_NORMALIZATIO
     Returns:
         The load as an SHGrid on the model grid.
     """
+    # Mass per area in kg/m^2 to pyslfp units (density scale x length scale)
+    parameters = model.parameters
+    scaled = coeffs / (parameters.density_scale * parameters.length_scale)
+    return field_from_coefficients(model, scaled, normalization=normalization, csphase=csphase)
+
+
+def field_from_coefficients(model, coeffs, /, *, normalization=CACHE_NORMALIZATION, csphase=CACHE_CSPHASE):
+    """
+    A field on the model grid from coefficients in the cache conventions, keeping
+    their units (e.g. kg/m^2 or metres). Truncated or padded with zeros to the
+    model's degree.
+
+    Args:
+        model: The pyslfp EarthModel.
+        coeffs: Coefficient array, shape (2, L + 1, L + 1).
+        normalization, csphase: Conventions of coeffs.
+
+    Returns:
+        The field as an SHGrid on the model grid.
+    """
     padded = np.zeros((2, model.lmax + 1, model.lmax + 1))
     lmax_common = min(model.lmax, coeffs.shape[1] - 1)
     padded[:, : lmax_common + 1, : lmax_common + 1] = coeffs[:, : lmax_common + 1, : lmax_common + 1]
     clm = SHCoeffs.from_array(padded, normalization=normalization, csphase=csphase)
     clm = clm.convert(normalization=model.normalization, csphase=model.csphase)
-
-    # Mass per area in kg/m^2 to pyslfp units (density scale x length scale)
-    parameters = model.parameters
-    clm = clm * (1.0 / (parameters.density_scale * parameters.length_scale))
     return model.expand_coefficient(clm)
 
 
@@ -472,6 +488,79 @@ def coefficients_from_sea_level(model, sea_level):
     clm = model.expand_field(sea_level)
     clm = clm.convert(normalization=CACHE_NORMALIZATION, csphase=CACHE_CSPHASE)
     return clm.coeffs * model.parameters.length_scale
+
+
+#=======================================================================
+# The direct load of each forcing, and the saved runs
+#=======================================================================
+
+FORCINGS = ("land", "land-ocean", "land-ocean-nogad")
+
+
+def direct_load_coefficients(forcing, lmax, /, *, data_dir=DEFAULT_DATA_DIR):
+    """
+    The monthly direct load of a forcing: the land load L, plus the direct ocean
+    load D for the ocean forcings (with or without GAD).
+
+    Args:
+        forcing: "land", "land-ocean" or "land-ocean-nogad".
+        lmax: Truncation degree. The ocean forcings need the direct ocean load
+            saved at this degree by grace_direct_ocean.py.
+        data_dir: Directory of the cached coefficients.
+
+    Returns:
+        Tuple (time_days, dates, coefficients in kg/m^2 of shape (n_months, 2, lmax + 1, lmax + 1)).
+    """
+    assert forcing in FORCINGS, f"Unknown forcing {forcing!r}; choose from {FORCINGS}"
+    mascons = load_mascon_coefficients(data_dir / "jpl_mascons_lmax90.npz")
+    time_days = mascons["time_days"]
+    assert mascons["land_coeffs"].shape[2] > lmax, (
+        f"The mascon cache only reaches degree {mascons['land_coeffs'].shape[2] - 1}; "
+        f"rerun download_grace_data.py with a higher lmax"
+    )
+    coeffs = mascons["land_coeffs"][:, :, : lmax + 1, : lmax + 1]
+
+    # --- Add the direct ocean load ---
+    if forcing != "land":
+        direct_ocean = load_direct_ocean_coefficients(data_dir / f"jpl_direct_ocean_lmax{lmax}.npz")
+        assert np.allclose(direct_ocean["time_days"], time_days), (
+            "The direct ocean load and the mascons have different months"
+        )
+        key = "direct_ocean_coeffs" if forcing == "land-ocean" else "direct_ocean_nogad_coeffs"
+        coeffs = coeffs + direct_ocean[key]
+    return time_days, mascons["dates"], coeffs
+
+
+def run_path(forcing, lmax, quality_factor, /, *, data_dir=DEFAULT_DATA_DIR):
+    """
+    Path of a run saved by grace_rotation_run.py.
+
+    Args:
+        forcing: "land", "land-ocean" or "land-ocean-nogad".
+        lmax: Truncation degree.
+        quality_factor: Q as given on the command line (e.g. "100" or "none").
+        data_dir: Directory of the cached coefficients.
+
+    Returns:
+        The Path of the .npz file.
+    """
+    return data_dir / "runs" / f"rotation_{forcing}_lmax{lmax}_Q{quality_factor}.npz"
+
+
+def load_run(forcing, lmax, quality_factor, /, *, data_dir=DEFAULT_DATA_DIR):
+    """
+    Reads a run saved by grace_rotation_run.py.
+
+    Args:
+        forcing, lmax, quality_factor, data_dir: As for run_path.
+
+    Returns:
+        Dict of its arrays, with dates as numpy datetime64.
+    """
+    with np.load(run_path(forcing, lmax, quality_factor, data_dir=data_dir)) as run:
+        result = {key: run[key] for key in run.files}
+    result["dates"] = result["dates"].astype("datetime64[D]")
+    return result
 
 
 #=======================================================================

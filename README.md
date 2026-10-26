@@ -27,15 +27,17 @@ GRACE/GRACE-FO loads come from the JPL RL06.3Mv04 CRI mascons. They need a NASA 
 `~/.netrc` (`machine urs.earthdata.nasa.gov login <username> password <password>`). Then, from the
 repository root,
 
-    python new-code/download_grace_data.py
+    python new-code/grace/download_grace_data.py
 
 downloads them into `data/grace/` and caches their land and ocean parts as spherical harmonic
-coefficients (`new-code/grace_data_helper.py`).
+coefficients (`new-code/grace/grace_data_helper.py`).
 
 The direct ocean load (the ocean mass change that is not the ocean's response to loading) and the
 dynamic runs follow:
 
-    python new-code/grace_direct_ocean.py --lmax 64
-    python new-code/grace_rotation_run.py --forcing land-ocean --lmax 64
+    python new-code/grace/grace_direct_ocean.py --lmax 64
+    python new-code/grace/grace_rotation_run.py --forcing land-ocean --lmax 64
 
 The runs are saved in `data/grace/runs/`; `--help` lists the options.
+The notebooks in `new-code/grace/` plot them (`grace_plots.ipynb`) and animate them
+(`animation_grace_*.ipynb`, writing GIFs to `new-code/grace/animations/`).

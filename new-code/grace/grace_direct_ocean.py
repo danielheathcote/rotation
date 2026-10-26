@@ -8,10 +8,16 @@ I the induced ocean load (the ocean's equilibrium response to the direct loads),
 with the rotation held at the mean-pole drift because of GRACE's pole-tide
 processing. See new-notes/grace_direct_ocean.pdf.
 
-Needs the cached mascon coefficients (python new-code/download_grace_data.py).
+Needs the cached mascon coefficients (python new-code/grace/download_grace_data.py).
 Run from the repository root:
-    python new-code/grace_direct_ocean.py [--lmax 128]
+    python new-code/grace/grace_direct_ocean.py [--lmax 128]
 """
+
+import sys
+from pathlib import Path
+
+# solver_dynamic lives one directory up, in new-code/
+sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 import argparse
 import time
